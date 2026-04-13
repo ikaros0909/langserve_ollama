@@ -39,6 +39,7 @@ if not USE_BGE_EMBEDDING:
 # LANGSERVE_ENDPOINT = "https://poodle-deep-marmot.ngrok-free.app/llm/"
 # LANGSERVE_ENDPOINT = "https://4a7d-203-251-156-66.ngrok-free.app/llm/"
 LANGSERVE_ENDPOINT = "http://localhost:8000/llm/"
+API_BASE_URL = "http://localhost:8000"
 
 # 2) LocalHost 접속: 끝에 붙는 N4XyA 는 각자 다르니
 # http://localhost:8000/llm/playground 에서 python SDK 에서 확인!
@@ -68,7 +69,112 @@ RAG_PROMPT_TEMPLATE = """당신은 주어진 문서 내용만을 기반으로 �
 [Answer]"""
 
 st.set_page_config(page_title="JInhak Local 모델 테스트", page_icon="💬")
-st.title("JInhak Local 모델 테스트")
+
+import requests
+
+# --- 케밥 메뉴 (상단 오른쪽) ---
+title_col, menu_col = st.columns([6, 1])
+title_col.title("JInhak Local 모델 테스트")
+with menu_col:
+    st.write("")  # 정렬용 여백
+    show_menu = st.popover("⋮")
+    with show_menu:
+        if st.button("API 키 관리", use_container_width=True):
+            st.session_state["show_api_keys"] = True
+
+# --- API 키 관리 화면 ---
+if st.session_state.get("show_api_keys"):
+    st.markdown("---")
+    st.subheader("API 키 관리")
+
+    # 키 생성
+    with st.form("create_key_form"):
+        key_name = st.text_input("키 이름 (용도 설명)", placeholder="예: 모바일 앱")
+        submitted = st.form_submit_button("새 API 키 생성")
+        if submitted and key_name:
+            try:
+                resp = requests.post(f"{API_BASE_URL}/api/keys/create", json={"name": key_name})
+                if resp.status_code == 200:
+                    data = resp.json()
+                    st.success("키가 생성되었습니다. **Secret Key는 지금만 확인 가능합니다!**")
+                    st.code(f"API Key:    {data['api_key']}\nSecret Key: {data['secret_key']}", language="text")
+                else:
+                    st.error(f"오류: {resp.json().get('detail', '키 생성 실패')}")
+            except requests.ConnectionError:
+                st.error("서버에 연결할 수 없습니다. LangServe 서버가 실행 중인지 확인하세요.")
+
+    # API Endpoint URL
+    st.markdown("#### API Endpoint")
+    chat_url = f"{API_BASE_URL}/api/chat"
+    st.code(chat_url, language="text")
+
+    # 키 목록
+    st.markdown("#### 등록된 키 목록")
+    try:
+        resp = requests.get(f"{API_BASE_URL}/api/keys/list")
+        if resp.status_code == 200:
+            keys = resp.json()
+            if not keys:
+                st.info("등록된 API 키가 없습니다.")
+            for k in keys:
+                status = "활성" if k["is_active"] else "비활성"
+                col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
+                col1.text(f"{k['name']} ({k['api_key'][:12]}...)")
+                col2.text(f"{k['created_at'][:10]}")
+                col3.text(status)
+                if k["is_active"]:
+                    if col4.button("비활성화", key=f"revoke_{k['api_key']}"):
+                        requests.post(f"{API_BASE_URL}/api/keys/revoke/{k['api_key']}")
+                        st.rerun()
+                else:
+                    if col4.button("삭제", key=f"delete_{k['api_key']}"):
+                        requests.delete(f"{API_BASE_URL}/api/keys/delete/{k['api_key']}")
+                        st.rerun()
+    except requests.ConnectionError:
+        st.error("서버에 연결할 수 없습니다.")
+
+    # API 사용 가이드
+    with st.expander("API 사용 가이드"):
+        st.markdown("""
+**요청 예시 (curl)**
+```bash
+curl -X POST http://localhost:8000/api/chat \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: jk-your-api-key" \\
+  -H "X-Secret-Key: sk-your-secret-key" \\
+  -d '{"message": "안녕하세요"}'
+```
+
+**요청 예시 (Python)**
+```python
+import requests
+
+resp = requests.post(
+    "http://localhost:8000/api/chat",
+    headers={
+        "X-API-Key": "jk-your-api-key",
+        "X-Secret-Key": "sk-your-secret-key",
+    },
+    json={"message": "안녕하세요"}
+)
+print(resp.json()["answer"])
+```
+
+**응답 형식**
+```json
+{"answer": "답변 내용"}
+```
+
+**오류 코드**
+- `401` — 인증 헤더 누락
+- `403` — 유효하지 않은 키
+- `429` — 요청 한도 초과 (분당 30회)
+        """)
+
+    if st.button("닫기"):
+        st.session_state["show_api_keys"] = False
+        st.rerun()
+    st.markdown("---")
 
 
 if "messages" not in st.session_state:
