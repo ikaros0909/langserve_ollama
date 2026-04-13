@@ -1,6 +1,23 @@
 
 # 무료로 한국어🇰🇷 파인튜닝 모델 받아서 나만의 로컬 LLM 호스팅 하기(LangServe) + RAG 까지!!
 
+conda env list 
+source activate [env] / deactivate
+python -m ollama-env
+
+```
+conda create --name ollama_env python=3.10
+conda activate ollama_env
+conda activate base
+sudo pip install -r requirements.txt
+
+pip install numpy==1.23.5
+
+```
+
+watch -d -n 1 nvidia-smi
+ngrok http http://10.2.2.44:8501
+
 ## YouTube 튜토리얼
 
 아래의 영상을 시청하시면서 따라서 진행하세요.
@@ -31,7 +48,7 @@ GGUF 파일을 다운로드 받기 위하여 https://huggingface.co/heegyu/EEVE-
 huggingface-cli download \
   heegyu/EEVE-Korean-Instruct-10.8B-v1.0-GGUF \
   ggml-model-Q5_K_M.gguf \
-  --local-dir 본인의_컴퓨터_다운로드폴더_경로 \
+  --local-dir /home/jinhakdl2/chatbot/langserve_ollama/gguf \
   --local-dir-use-symlinks False
 ```
 
@@ -76,13 +93,15 @@ PARAMETER stop <|im_end|>
 ## Ollama 실행
 
 ```bash
-ollama create EEVE-Korean-10.8B -f EEVE-Korean-Instruct-10.8B-v1.0-GGUF/Modelfile
+ollama create EEVE-Korean-10.8B -f EEVE-Korean-Instruct-10.8B-v1.0/Modelfile
 ```
 
 Ollama 모델 목록
 
 ```bash
 ollama list
+ollama stop EEVE-Korean-10.8B:latest
+ollama delete EEVE-Korean-10.8B:latest
 ```
 
 Ollama 모델 실행
@@ -112,6 +131,10 @@ NGROK 도메인 등록 링크: https://dashboard.ngrok.com/cloud-edge/domains
 ```bash
 ngrok http --domain=poodle-deep-marmot.ngrok-free.app 8000
 ```
+
+## streamlit 실행
+streamlit run main.py
+
 
 ## GPU 사용량 모니터링
 
