@@ -135,14 +135,21 @@ if st.session_state.get("show_api_keys"):
 
     # API 사용 가이드
     with st.expander("API 사용 가이드"):
-        st.markdown("""
+        st.markdown(f"""
+**요청 필드**
+| 필드 | 필수 | 설명 |
+|------|------|------|
+| `message` | O | 질문 내용 |
+| `system_prompt` | X | 시스템 프롬프트 (기본: 한국어 AI 어시스턴트) |
+| `temperature` | X | 창의성 조절 0~1 (기본: 서버 설정값) |
+
 **요청 예시 (curl)**
 ```bash
-curl -X POST http://localhost:8000/api/chat \\
+curl -X POST {API_BASE_URL}/api/chat \\
   -H "Content-Type: application/json" \\
   -H "X-API-Key: jk-your-api-key" \\
   -H "X-Secret-Key: sk-your-secret-key" \\
-  -d '{"message": "안녕하세요"}'
+  -d '{{"message": "안녕하세요", "system_prompt": "당신은 입학처 AI 상담원입니다.", "temperature": 0.7}}'
 ```
 
 **요청 예시 (Python)**
@@ -150,19 +157,31 @@ curl -X POST http://localhost:8000/api/chat \\
 import requests
 
 resp = requests.post(
-    "http://localhost:8000/api/chat",
-    headers={
+    "{API_BASE_URL}/api/chat",
+    headers={{
         "X-API-Key": "jk-your-api-key",
         "X-Secret-Key": "sk-your-secret-key",
-    },
-    json={"message": "안녕하세요"}
+    }},
+    json={{
+        "message": "안녕하세요",
+        "system_prompt": "당신은 입학처 AI 상담원입니다.",
+        "temperature": 0.7,
+    }}
 )
-print(resp.json()["answer"])
+data = resp.json()
+print(data["answer"])
+print(data.get("usage"))  # 토큰 사용량
 ```
 
 **응답 형식**
 ```json
-{"answer": "답변 내용"}
+{{"answer": "답변 내용", "usage": {{"input_tokens": 150, "output_tokens": 200, "total_tokens": 350}}}}
+```
+
+**헬스체크**
+```bash
+curl {API_BASE_URL}/api/health
+# {{"status": "ok", "model": "exaone3.5:32b"}}
 ```
 
 **오류 코드**

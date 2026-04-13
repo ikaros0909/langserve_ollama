@@ -13,6 +13,7 @@ from langserve import add_routes
 from chain import chain
 from chat import chain as chat_chain
 from translator import chain as EN_TO_KO_chain
+from langchain_community.chat_models import ChatOllama
 from llm import llm as model
 # from xionic import chain as xionic_chain
 import api_keys
@@ -162,23 +163,60 @@ async def delete_api_key(api_key: str):
 class ChatRequest(PydanticBaseModel):
     message: str
     system_prompt: Optional[str] = None
+    temperature: Optional[float] = None
+
+
+class UsageInfo(PydanticBaseModel):
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
 
 
 class ChatResponse(PydanticBaseModel):
     answer: str
+    usage: Optional[UsageInfo] = None
 
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def api_chat(req: ChatRequest):
     """일반 채팅 API — 모델에 질문하고 답변을 받습니다."""
     system = req.system_prompt or "You are a helpful AI assistant. Answer in Korean."
+
+    # temperature 오버라이드
+    if req.temperature is not None:
+        llm = ChatOllama(model="exaone3.5:32b", temperature=req.temperature)
+    else:
+        llm = model
+
     prompt = ChatPromptTemplate.from_messages([
         ("system", system),
         ("human", "{input}"),
     ])
-    chain_api = prompt | model | StrOutputParser()
-    answer = chain_api.invoke({"input": req.message})
-    return ChatResponse(answer=answer)
+    chain_api = prompt | llm
+
+    result = chain_api.invoke({"input": req.message})
+    answer = result.content if hasattr(result, "content") else str(result)
+
+    # 토큰 사용량 추출
+    usage = None
+    if hasattr(result, "response_metadata"):
+        meta = result.response_metadata
+        if "prompt_eval_count" in meta or "eval_count" in meta:
+            input_tokens = meta.get("prompt_eval_count", 0)
+            output_tokens = meta.get("eval_count", 0)
+            usage = UsageInfo(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=input_tokens + output_tokens,
+            )
+
+    return ChatResponse(answer=answer, usage=usage)
+
+
+# --- 헬스체크 ---
+@app.get("/api/health")
+async def health():
+    return {"status": "ok", "model": "exaone3.5:32b"}
 
 
 if __name__ == "__main__":
