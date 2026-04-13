@@ -2,6 +2,7 @@
 **/__pycache__/**
 ollama-env/
 app/ollama-env/
+data/
 
 *.DS_Store
 *.pyc
