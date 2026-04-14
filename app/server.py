@@ -475,4 +475,10 @@ if __name__ == "__main__":
     import uvicorn
 
     # uvicorn.run(app, host="10.2.2.44", port=8000)
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8000,
+        limit_max_request_size=500 * 1024 * 1024,
+        timeout_keep_alive=600,  # 10분
+    )
