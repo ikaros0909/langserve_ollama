@@ -374,6 +374,96 @@ async def api_video(
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+# --- 자막/스크립트 생성 API ---
+@app.post("/api/transcribe")
+async def api_transcribe(
+    file: UploadFile = File(...),
+    whisper_model: str = Form(default="base"),
+    format: str = Form(default="json"),
+):
+    """
+    영상 또는 음성 파일 → 자막/스크립트 생성.
+
+    - 지원 포맷: mp4, avi, mov, mkv, webm, mp3, wav, m4a, ogg, flac
+    - whisper_model: tiny, base, small, medium, large (클수록 정확, 느림)
+    - format: json (기본), srt, vtt, text
+    """
+    SUPPORTED_VIDEO = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
+    SUPPORTED_AUDIO = {".mp3", ".wav", ".m4a", ".ogg", ".flac"}
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in SUPPORTED_VIDEO | SUPPORTED_AUDIO:
+        raise HTTPException(
+            400,
+            f"지원하지 않는 파일 형식: {ext}. "
+            f"지원: {sorted(SUPPORTED_VIDEO | SUPPORTED_AUDIO)}",
+        )
+
+    if format not in ("json", "srt", "vtt", "text"):
+        raise HTTPException(400, "format은 json, srt, vtt, text 중 하나여야 합니다.")
+
+    tmp_dir = tempfile.mkdtemp()
+    file_path = os.path.join(tmp_dir, file.filename)
+    try:
+        with open(file_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+
+        # 영상이면 음성 추출, 음성이면 그대로 사용
+        audio_path = file_path
+        if ext in SUPPORTED_VIDEO:
+            audio_path = os.path.join(tmp_dir, "audio.wav")
+            if not video_processor.extract_audio(file_path, audio_path):
+                raise HTTPException(500, "음성 추출에 실패했습니다.")
+
+        # Whisper 변환
+        result = video_processor.transcribe_audio(audio_path, whisper_model)
+
+        if format == "text":
+            return {"text": result["text"], "language": result["language"]}
+
+        if format == "srt":
+            srt_lines = []
+            for i, seg in enumerate(result["segments"], 1):
+                start = _format_timestamp_srt(seg["start"])
+                end = _format_timestamp_srt(seg["end"])
+                srt_lines.append(f"{i}\n{start} --> {end}\n{seg['text'].strip()}\n")
+            return {"srt": "\n".join(srt_lines), "language": result["language"]}
+
+        if format == "vtt":
+            vtt_lines = ["WEBVTT\n"]
+            for seg in result["segments"]:
+                start = _format_timestamp_vtt(seg["start"])
+                end = _format_timestamp_vtt(seg["end"])
+                vtt_lines.append(f"{start} --> {end}\n{seg['text'].strip()}\n")
+            return {"vtt": "\n".join(vtt_lines), "language": result["language"]}
+
+        # json (기본)
+        return {
+            "text": result["text"],
+            "segments": result["segments"],
+            "language": result["language"],
+        }
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _format_timestamp_srt(seconds: float) -> str:
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    ms = int((seconds % 1) * 1000)
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+
+def _format_timestamp_vtt(seconds: float) -> str:
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    ms = int((seconds % 1) * 1000)
+    return f"{h:02d}:{m:02d}:{s:02d}.{ms:03d}"
+
+
 # --- 헬스체크 ---
 @app.get("/api/health")
 async def health():
