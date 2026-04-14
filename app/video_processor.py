@@ -136,59 +136,39 @@ def split_audio(audio_path: str, output_dir: str, chunk_seconds: int = 600) -> L
 
 
 def transcribe_audio(audio_path: str, model_size: str = "base") -> Dict:
-    """Whisper로 음성을 텍스트로 변환. 긴 음성은 청크 분할 후 처리."""
+    """
+    Whisper로 음성을 텍스트로 변환.
+    Whisper는 내부적으로 30초 단위로 처리하므로 긴 파일도 전체 처리 가능.
+    """
     import whisper
+    import logging
+
+    logger = logging.getLogger("whisper_stt")
+    duration = get_audio_duration(audio_path)
+    logger.info(f"[STT] 파일: {audio_path}, 길이: {duration:.1f}초, 모델: {model_size}")
 
     model = whisper.load_model(model_size)
-    duration = get_audio_duration(audio_path)
 
-    # 10분 이하: 단일 처리
-    if duration <= 600:
-        result = model.transcribe(
-            audio_path,
-            language="ko",
-            condition_on_previous_text=True,
-            verbose=False,
-        )
-        return {
-            "text": result["text"],
-            "segments": [
-                {"start": seg["start"], "end": seg["end"], "text": seg["text"]}
-                for seg in result["segments"]
-            ],
-            "language": result.get("language", "ko"),
-        }
+    # Whisper에 전체 파일 전달 — 내부적으로 30초 윈도우로 순차 처리
+    result = model.transcribe(
+        audio_path,
+        language="ko",
+        condition_on_previous_text=True,
+        verbose=False,
+    )
 
-    # 10분 초과: 청크 분할 후 병합
-    with tempfile.TemporaryDirectory() as chunk_dir:
-        chunk_paths = split_audio(audio_path, chunk_dir, chunk_seconds=600)
+    segments = [
+        {"start": round(seg["start"], 2), "end": round(seg["end"], 2), "text": seg["text"]}
+        for seg in result["segments"]
+    ]
 
-        all_text = []
-        all_segments = []
-        time_offset = 0.0
+    logger.info(f"[STT] 완료: {len(segments)}개 세그먼트, 총 {len(result['text'])}자")
 
-        for chunk_path in chunk_paths:
-            chunk_duration = get_audio_duration(chunk_path)
-            result = model.transcribe(
-                chunk_path,
-                language="ko",
-                condition_on_previous_text=True,
-                verbose=False,
-            )
-            all_text.append(result["text"])
-            for seg in result["segments"]:
-                all_segments.append({
-                    "start": round(seg["start"] + time_offset, 2),
-                    "end": round(seg["end"] + time_offset, 2),
-                    "text": seg["text"],
-                })
-            time_offset += chunk_duration
-
-        return {
-            "text": " ".join(all_text),
-            "segments": all_segments,
-            "language": "ko",
-        }
+    return {
+        "text": result["text"],
+        "segments": segments,
+        "language": result.get("language", "ko"),
+    }
 
 
 def frames_to_base64(frame_paths: List[str]) -> List[Dict]:
