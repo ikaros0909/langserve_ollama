@@ -320,6 +320,7 @@ async def api_video(
     model: str = Form(default="gemma4:26b"),
     whisper_model: str = Form(default="base"),
     max_frames: int = Form(default=5),
+    language: str = Form(default=""),
 ):
     """
     동영상 업로드 → 음성 텍스트 변환(Whisper) + 주요 프레임 이미지 분석(Gemma 4).
@@ -336,7 +337,7 @@ async def api_video(
             f.write(content)
 
         # 동영상 처리: 음성 추출 + STT + 프레임 추출
-        result = video_processor.process_video(video_path, whisper_model, max_frames)
+        result = video_processor.process_video(video_path, whisper_model, max_frames, language=language or None)
         transcript = result["transcript"]["text"]
         frames = result["frames"]
 
@@ -380,12 +381,14 @@ async def api_transcribe(
     file: UploadFile = File(...),
     whisper_model: str = Form(default="base"),
     format: str = Form(default="json"),
+    language: str = Form(default=""),
 ):
     """
     영상 또는 음성 파일 → 자막/스크립트 생성.
 
     - 지원 포맷: mp4, avi, mov, mkv, webm, mp3, wav, m4a, ogg, flac
     - whisper_model: tiny, base, small, medium, large (클수록 정확, 느림)
+    - language: ko(한국어), en(영어), 빈값(자동감지)
     - format: json (기본), srt, vtt, text
     """
     SUPPORTED_VIDEO = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
@@ -417,7 +420,7 @@ async def api_transcribe(
                 raise HTTPException(500, "음성 추출에 실패했습니다.")
 
         # Whisper 변환
-        result = video_processor.transcribe_audio(audio_path, whisper_model)
+        result = video_processor.transcribe_audio(audio_path, whisper_model, language=language or None)
 
         if format == "text":
             return {"text": result["text"], "language": result["language"]}
@@ -479,6 +482,5 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8000,
-        limit_max_request_size=500 * 1024 * 1024,
         timeout_keep_alive=600,  # 10분
     )

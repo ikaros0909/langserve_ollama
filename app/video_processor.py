@@ -135,21 +135,22 @@ def split_audio(audio_path: str, output_dir: str, chunk_seconds: int = 600) -> L
     return chunk_paths if chunk_paths else [audio_path]
 
 
-def _transcribe_single(model, audio_path: str) -> Dict:
-    """단일 파일을 Whisper로 변환."""
-    result = model.transcribe(
-        audio_path,
-        language="ko",
-        condition_on_previous_text=False,  # hallucination 루프 방지
-        no_speech_threshold=0.6,
-        compression_ratio_threshold=2.4,
-        logprob_threshold=-1.0,
-        verbose=False,
-    )
+def _transcribe_single(model, audio_path: str, language: Optional[str] = None) -> Dict:
+    """단일 파일을 Whisper로 변환. language=None이면 자동 감지."""
+    kwargs = {
+        "condition_on_previous_text": False,
+        "no_speech_threshold": 0.6,
+        "compression_ratio_threshold": 2.4,
+        "logprob_threshold": -1.0,
+        "verbose": False,
+    }
+    if language:
+        kwargs["language"] = language
+    result = model.transcribe(audio_path, **kwargs)
     return result
 
 
-def transcribe_audio(audio_path: str, model_size: str = "base") -> Dict:
+def transcribe_audio(audio_path: str, model_size: str = "base", language: Optional[str] = None) -> Dict:
     """
     Whisper로 음성을 텍스트로 변환.
     5분 단위 청크 분할로 긴 음성도 안정적으로 처리.
@@ -159,19 +160,20 @@ def transcribe_audio(audio_path: str, model_size: str = "base") -> Dict:
 
     logger = logging.getLogger("whisper_stt")
     duration = get_audio_duration(audio_path)
-    logger.info(f"[STT] 파일: {audio_path}, 길이: {duration:.1f}초, 모델: {model_size}")
+    lang_label = language or "자동감지"
+    logger.info(f"[STT] 파일: {audio_path}, 길이: {duration:.1f}초, 모델: {model_size}, 언어: {lang_label}")
 
     model = whisper.load_model(model_size)
 
     # 5분 이하: 단일 처리
     if duration <= 300:
-        result = _transcribe_single(model, audio_path)
+        result = _transcribe_single(model, audio_path, language)
         segments = [
             {"start": round(s["start"], 2), "end": round(s["end"], 2), "text": s["text"]}
             for s in result["segments"]
         ]
-        logger.info(f"[STT] 완료: {len(segments)}개 세그먼트")
-        return {"text": result["text"], "segments": segments, "language": result.get("language", "ko")}
+        logger.info(f"[STT] 완료: {len(segments)}개 세그먼트, 감지언어: {result.get('language')}")
+        return {"text": result["text"], "segments": segments, "language": result.get("language", "")}
 
     # 5분 초과: 5분 단위 청크 분할
     chunk_seconds = 300
@@ -215,7 +217,7 @@ def transcribe_audio(audio_path: str, model_size: str = "base") -> Dict:
             logger.info(f"[STT] 청크 {chunk_idx} 처리 중: {start:.0f}~{start + chunk_duration:.0f}초")
 
             try:
-                result = _transcribe_single(model, chunk_path)
+                result = _transcribe_single(model, chunk_path, language)
                 all_text.append(result["text"])
                 for seg in result["segments"]:
                     all_segments.append({
@@ -236,7 +238,7 @@ def transcribe_audio(audio_path: str, model_size: str = "base") -> Dict:
     return {
         "text": full_text,
         "segments": all_segments,
-        "language": "ko",
+        "language": language or "auto",
     }
 
 
@@ -253,7 +255,7 @@ def frames_to_base64(frame_paths: List[str]) -> List[Dict]:
     return results
 
 
-def process_video(video_path: str, whisper_model: str = "base", max_frames: int = 5) -> Dict:
+def process_video(video_path: str, whisper_model: str = "base", max_frames: int = 5, language: Optional[str] = None) -> Dict:
     """
     동영상 처리 통합 함수.
     반환: {"transcript": {...}, "frames": [...]}
@@ -264,7 +266,7 @@ def process_video(video_path: str, whisper_model: str = "base", max_frames: int 
         # 1) 음성 추출 + STT
         audio_path = os.path.join(tmp_dir, "audio.wav")
         if extract_audio(video_path, audio_path):
-            result["transcript"] = transcribe_audio(audio_path, whisper_model)
+            result["transcript"] = transcribe_audio(audio_path, whisper_model, language)
         else:
             result["transcript"] = {"text": "(음성을 추출할 수 없습니다)", "segments": [], "language": ""}
 
