@@ -153,39 +153,35 @@ def _transcribe_single(model, audio_path: str, language: Optional[str] = None) -
 def transcribe_audio(audio_path: str, model_size: str = "base", language: Optional[str] = None) -> Dict:
     """
     Whisper로 음성을 텍스트로 변환.
-    5분 단위 청크 분할로 긴 음성도 안정적으로 처리.
+    항상 5분 단위 청크 분할로 처리 (긴 음성 안정성 보장).
     """
     import whisper
-    import logging
+    import sys
 
-    logger = logging.getLogger("whisper_stt")
     duration = get_audio_duration(audio_path)
     lang_label = language or "자동감지"
-    logger.info(f"[STT] 파일: {audio_path}, 길이: {duration:.1f}초, 모델: {model_size}, 언어: {lang_label}")
+    print(f"[STT] 시작 — 길이: {duration:.1f}초 ({duration/60:.1f}분), 모델: {model_size}, 언어: {lang_label}", flush=True)
+
+    if duration <= 0:
+        print("[STT] 오류: 음성 길이를 확인할 수 없습니다.", flush=True)
+        return {"text": "", "segments": [], "language": ""}
 
     model = whisper.load_model(model_size)
+    print(f"[STT] Whisper {model_size} 모델 로드 완료", flush=True)
 
-    # 5분 이하: 단일 처리
-    if duration <= 300:
-        result = _transcribe_single(model, audio_path, language)
-        segments = [
-            {"start": round(s["start"], 2), "end": round(s["end"], 2), "text": s["text"]}
-            for s in result["segments"]
-        ]
-        logger.info(f"[STT] 완료: {len(segments)}개 세그먼트, 감지언어: {result.get('language')}")
-        return {"text": result["text"], "segments": segments, "language": result.get("language", "")}
-
-    # 5분 초과: 5분 단위 청크 분할
+    # 항상 5분 단위 청크 분할 (안정성)
     chunk_seconds = 300
+    total_chunks = int(duration // chunk_seconds) + (1 if duration % chunk_seconds > 0 else 0)
     all_text = []
     all_segments = []
     time_offset = 0.0
-    chunk_idx = 0
 
     with tempfile.TemporaryDirectory() as chunk_dir:
-        start = 0.0
-        while start < duration:
+        for chunk_idx in range(total_chunks):
+            start = chunk_idx * chunk_seconds
             chunk_path = os.path.join(chunk_dir, f"chunk_{chunk_idx:03d}.wav")
+
+            # ffmpeg로 청크 추출
             try:
                 subprocess.run(
                     [
@@ -202,38 +198,36 @@ def transcribe_audio(audio_path: str, model_size: str = "base", language: Option
                     check=True,
                 )
             except subprocess.CalledProcessError as e:
-                logger.error(f"[STT] 청크 {chunk_idx} ffmpeg 실패: {e}")
-                start += chunk_seconds
-                chunk_idx += 1
+                print(f"[STT] 청크 {chunk_idx+1}/{total_chunks} ffmpeg 실패: {e}", flush=True)
                 continue
 
             if not os.path.exists(chunk_path) or os.path.getsize(chunk_path) <= 44:
-                logger.warning(f"[STT] 청크 {chunk_idx} 빈 파일, 건너뜀")
-                start += chunk_seconds
-                chunk_idx += 1
+                print(f"[STT] 청크 {chunk_idx+1}/{total_chunks} 빈 파일, 건너뜀", flush=True)
                 continue
 
             chunk_duration = get_audio_duration(chunk_path)
-            logger.info(f"[STT] 청크 {chunk_idx} 처리 중: {start:.0f}~{start + chunk_duration:.0f}초")
+            end_time = start + chunk_duration
+            print(f"[STT] 청크 {chunk_idx+1}/{total_chunks} 처리 중: {start/60:.1f}분 ~ {end_time/60:.1f}분", flush=True)
 
             try:
                 result = _transcribe_single(model, chunk_path, language)
-                all_text.append(result["text"])
-                for seg in result["segments"]:
+                chunk_text = result["text"]
+                chunk_segs = result["segments"]
+                all_text.append(chunk_text)
+                for seg in chunk_segs:
                     all_segments.append({
                         "start": round(seg["start"] + time_offset, 2),
                         "end": round(seg["end"] + time_offset, 2),
                         "text": seg["text"],
                     })
+                print(f"[STT] 청크 {chunk_idx+1}/{total_chunks} 완료: {len(chunk_segs)}개 세그먼트, {len(chunk_text)}자", flush=True)
             except Exception as e:
-                logger.error(f"[STT] 청크 {chunk_idx} Whisper 실패: {e}")
+                print(f"[STT] 청크 {chunk_idx+1}/{total_chunks} Whisper 실패: {e}", flush=True)
 
             time_offset += chunk_duration
-            start += chunk_seconds
-            chunk_idx += 1
 
     full_text = " ".join(all_text)
-    logger.info(f"[STT] 전체 완료: {len(all_segments)}개 세그먼트, {len(full_text)}자")
+    print(f"[STT] 전체 완료: {len(all_segments)}개 세그먼트, {len(full_text)}자", flush=True)
 
     return {
         "text": full_text,
