@@ -192,6 +192,11 @@ AVAILABLE_MODELS = {
         "description": "Kakao 한국어/영어 이중언어 모델",
         "multimodal": False,
     },
+    "gemma4:31b": {
+        "name": "Gemma 4 31B Dense",
+        "description": "Google Dense 모델 (32B, 멀티모달)",
+        "multimodal": True,
+    },
     "gemma4:26b": {
         "name": "Gemma 4 26B MoE",
         "description": "Google MoE 모델 (4B active, 256K context, 멀티모달)",
