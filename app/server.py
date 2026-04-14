@@ -4,8 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 from starlette.middleware.base import BaseHTTPMiddleware
 from typing import List, Union, Optional
-from pydantic import BaseModel as PydanticBaseModel
-from langserve.pydantic_v1 import BaseModel, Field
+from pydantic import BaseModel, Field
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
@@ -13,16 +12,22 @@ from langserve import add_routes
 from chain import chain
 from chat import chain as chat_chain
 from translator import chain as EN_TO_KO_chain
-from langchain_community.chat_models import ChatOllama
+from langchain_ollama import ChatOllama
 from llm import llm as model
 # from xionic import chain as xionic_chain
 import api_keys
+import video_processor
 
 
 app = FastAPI()
 
 
 # --- API 인증 미들웨어 ---
+import logging
+logger = logging.getLogger("api_auth")
+logging.basicConfig(level=logging.INFO)
+
+
 class APIAuthMiddleware(BaseHTTPMiddleware):
     """
     /api/ 경로에 대해 X-API-Key, X-Secret-Key 헤더 검증.
@@ -30,36 +35,52 @@ class APIAuthMiddleware(BaseHTTPMiddleware):
     """
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
-        # /api/ 경로만 인증 필요
+        method = request.method
+        client_host = request.client.host if request.client else "unknown"
+
+        # /api/ 경로가 아니면 통과
         if not path.startswith("/api/"):
+            return await call_next(request)
+
+        # CORS preflight (OPTIONS) 요청은 인증 없이 통과
+        if method == "OPTIONS":
+            return await call_next(request)
+
+        # 헬스체크는 인증 없이 허용
+        if path == "/api/health":
             return await call_next(request)
 
         # 키 관리 엔드포인트는 로컬에서만 접근 허용
         if path.startswith("/api/keys"):
-            client_host = request.client.host if request.client else ""
             if client_host in ("127.0.0.1", "::1", "localhost"):
                 return await call_next(request)
+            logger.warning(f"[AUTH] 키 관리 접근 거부: client={client_host}, path={path}")
             return JSONResponse(
                 status_code=403,
                 content={"error": "키 관리는 로컬에서만 접근 가능합니다."},
             )
 
-        api_key = request.headers.get("X-API-Key")
-        secret_key = request.headers.get("X-Secret-Key")
+        api_key = (request.headers.get("X-API-Key") or "").strip()
+        secret_key = (request.headers.get("X-Secret-Key") or "").strip()
+
+        logger.info(f"[AUTH] {method} {path} | client={client_host} | X-API-Key={api_key[:12]}... | X-Secret-Key={'(있음)' if secret_key else '(없음)'}")
 
         if not api_key or not secret_key:
+            logger.warning(f"[AUTH] 인증 헤더 누락: api_key={'있음' if api_key else '없음'}, secret_key={'있음' if secret_key else '없음'}")
             return JSONResponse(
                 status_code=401,
                 content={"error": "X-API-Key 와 X-Secret-Key 헤더가 필요합니다."},
             )
 
         if not api_keys.validate_key(api_key, secret_key):
+            logger.warning(f"[AUTH] 키 검증 실패: api_key={api_key[:12]}...")
             return JSONResponse(
                 status_code=403,
                 content={"error": "유효하지 않거나 비활성화된 API 키입니다."},
             )
 
         if not api_keys.check_rate_limit(api_key):
+            logger.warning(f"[AUTH] Rate limit 초과: api_key={api_key[:12]}...")
             return JSONResponse(
                 status_code=429,
                 content={"error": f"요청 한도 초과 (분당 {api_keys.RATE_LIMIT_PER_MINUTE}회)."},
@@ -125,7 +146,7 @@ add_routes(app, model, path="/llm")
 # API 키 관리 엔드포인트 (Streamlit UI에서 호출)
 # ============================================================
 
-class KeyCreateRequest(PydanticBaseModel):
+class KeyCreateRequest(BaseModel):
     name: str
 
 
@@ -157,44 +178,105 @@ async def delete_api_key(api_key: str):
 
 
 # ============================================================
+# 사용 가능한 모델 정의
+# ============================================================
+
+AVAILABLE_MODELS = {
+    "exaone3.5:32b": {
+        "name": "EXAONE 3.5 32B",
+        "description": "LG AI 한국어 특화 대형 모델",
+        "multimodal": False,
+    },
+    "huihui_ai/kanana-nano-abliterated": {
+        "name": "Kanana Nano",
+        "description": "Kakao 한국어/영어 이중언어 모델",
+        "multimodal": False,
+    },
+    "gemma4:26b": {
+        "name": "Gemma 4 26B MoE",
+        "description": "Google MoE 모델 (4B active, 256K context, 멀티모달)",
+        "multimodal": True,
+    },
+}
+
+DEFAULT_MODEL = "exaone3.5:32b"
+
+
+# ============================================================
 # 외부 API 엔드포인트 (인증 필요: X-API-Key, X-Secret-Key)
 # ============================================================
 
-class ChatRequest(PydanticBaseModel):
+class ChatRequest(BaseModel):
     message: str
+    model: Optional[str] = None
     system_prompt: Optional[str] = None
     temperature: Optional[float] = None
+    images: Optional[List[str]] = None  # base64 인코딩 이미지 리스트
 
 
-class UsageInfo(PydanticBaseModel):
+class UsageInfo(BaseModel):
     input_tokens: int
     output_tokens: int
     total_tokens: int
 
 
-class ChatResponse(PydanticBaseModel):
+class ChatResponse(BaseModel):
     answer: str
+    model: str
     usage: Optional[UsageInfo] = None
 
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def api_chat(req: ChatRequest):
-    """일반 채팅 API — 모델에 질문하고 답변을 받습니다."""
+    """일반 채팅 API — 모델을 선택하여 질문하고 답변을 받습니다. 멀티모달 모델은 이미지도 처리 가능."""
+    from langchain_core.messages import HumanMessage as HMsg, SystemMessage as SMsg
+
+    # 모델 선택
+    model_name = req.model or DEFAULT_MODEL
+    if model_name not in AVAILABLE_MODELS:
+        raise HTTPException(
+            400,
+            f"지원하지 않는 모델입니다: {model_name}. "
+            f"사용 가능한 모델: {list(AVAILABLE_MODELS.keys())}",
+        )
+
+    # 이미지가 포함된 요청인데 멀티모달 미지원 모델인 경우
+    if req.images and not AVAILABLE_MODELS[model_name]["multimodal"]:
+        raise HTTPException(
+            400,
+            f"'{model_name}'은 이미지를 지원하지 않습니다. "
+            f"멀티모달 모델: {[k for k, v in AVAILABLE_MODELS.items() if v['multimodal']]}",
+        )
+
     system = req.system_prompt or "You are a helpful AI assistant. Answer in Korean."
+    temp = req.temperature if req.temperature is not None else 0.5
 
-    # temperature 오버라이드
-    if req.temperature is not None:
-        llm = ChatOllama(model="exaone3.5:32b", temperature=req.temperature)
+    llm = ChatOllama(model=model_name, temperature=temp)
+
+    if req.images:
+        # 멀티모달: 이미지 + 텍스트를 HumanMessage content 블록으로 구성
+        content_blocks = []
+        for img_b64 in req.images:
+            content_blocks.append({
+                "type": "image_url",
+                "image_url": f"data:image/jpeg;base64,{img_b64}",
+            })
+        content_blocks.append({"type": "text", "text": req.message})
+
+        messages = [
+            SMsg(content=system),
+            HMsg(content=content_blocks),
+        ]
+        result = llm.invoke(messages)
     else:
-        llm = model
+        # 텍스트 전용
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", system),
+            ("human", "{input}"),
+        ])
+        chain_api = prompt | llm
+        result = chain_api.invoke({"input": req.message})
 
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system),
-        ("human", "{input}"),
-    ])
-    chain_api = prompt | llm
-
-    result = chain_api.invoke({"input": req.message})
     answer = result.content if hasattr(result, "content") else str(result)
 
     # 토큰 사용량 추출
@@ -210,16 +292,96 @@ async def api_chat(req: ChatRequest):
                 total_tokens=input_tokens + output_tokens,
             )
 
-    return ChatResponse(answer=answer, usage=usage)
+    return ChatResponse(answer=answer, model=model_name, usage=usage)
+
+
+# --- 모델 목록 ---
+@app.get("/api/models")
+async def list_models():
+    """사용 가능한 모델 목록 반환."""
+    return {
+        "default": DEFAULT_MODEL,
+        "models": {
+            k: {**v, "id": k} for k, v in AVAILABLE_MODELS.items()
+        },
+    }
+
+
+# --- 동영상 처리 API ---
+import tempfile
+import shutil
+from fastapi import UploadFile, File, Form
+
+
+@app.post("/api/video")
+async def api_video(
+    file: UploadFile = File(...),
+    message: str = Form(default="이 동영상의 내용을 분석해줘"),
+    model: str = Form(default="gemma4:26b"),
+    whisper_model: str = Form(default="base"),
+    max_frames: int = Form(default=5),
+):
+    """
+    동영상 업로드 → 음성 텍스트 변환(Whisper) + 주요 프레임 이미지 분석(Gemma 4).
+    """
+    if model not in AVAILABLE_MODELS:
+        raise HTTPException(400, f"지원하지 않는 모델: {model}")
+
+    # 임시 파일에 동영상 저장
+    tmp_dir = tempfile.mkdtemp()
+    video_path = os.path.join(tmp_dir, file.filename)
+    try:
+        with open(video_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+
+        # 동영상 처리: 음성 추출 + STT + 프레임 추출
+        result = video_processor.process_video(video_path, whisper_model, max_frames)
+        transcript = result["transcript"]["text"]
+        frames = result["frames"]
+
+        # Gemma 4로 프레임 분석 (멀티모달 모델인 경우)
+        frame_analysis = ""
+        if frames and AVAILABLE_MODELS.get(model, {}).get("multimodal"):
+            from langchain_core.messages import HumanMessage as HMsg, SystemMessage as SMsg
+
+            content_blocks = []
+            for frame in frames:
+                content_blocks.append({
+                    "type": "image_url",
+                    "image_url": f"data:image/jpeg;base64,{frame['base64']}",
+                })
+            content_blocks.append({
+                "type": "text",
+                "text": f"다음은 동영상에서 추출한 주요 장면입니다. 음성 내용: {transcript}\n\n질문: {message}",
+            })
+
+            llm = ChatOllama(model=model, temperature=0.5)
+            llm_result = llm.invoke([
+                SMsg(content="You are a helpful AI assistant that analyzes videos. Answer in Korean."),
+                HMsg(content=content_blocks),
+            ])
+            frame_analysis = llm_result.content if hasattr(llm_result, "content") else str(llm_result)
+
+        return {
+            "transcript": transcript,
+            "segments": result["transcript"]["segments"],
+            "language": result["transcript"]["language"],
+            "frame_count": len(frames),
+            "analysis": frame_analysis,
+        }
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 # --- 헬스체크 ---
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "model": "exaone3.5:32b"}
+    return {"status": "ok", "default_model": DEFAULT_MODEL, "available_models": list(AVAILABLE_MODELS.keys())}
 
 
 if __name__ == "__main__":
+    import os
     import uvicorn
 
     # uvicorn.run(app, host="10.2.2.44", port=8000)

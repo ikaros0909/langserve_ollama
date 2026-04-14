@@ -1,8 +1,11 @@
 import os
+import sys
 import re
 import tempfile
 import opendataloader_pdf
 import streamlit as st
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 from langchain.embeddings import CacheBackedEmbeddings
 from langchain.storage import LocalFileStore
 from langchain_openai import OpenAIEmbeddings
@@ -15,9 +18,6 @@ from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders.unstructured import UnstructuredFileLoader
 from langchain_community.vectorstores.faiss import FAISS
-from langserve import RemoteRunnable
-from langchain_openai import ChatOpenAI
-from langchain_core.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 
 
 # ⭐️ Embedding 설정
@@ -73,127 +73,7 @@ st.set_page_config(page_title="JInhak Local 모델 테스트", page_icon="💬")
 import requests
 
 # --- 케밥 메뉴 (상단 오른쪽) ---
-title_col, menu_col = st.columns([6, 1])
-title_col.title("JInhak Local 모델 테스트")
-with menu_col:
-    st.write("")  # 정렬용 여백
-    show_menu = st.popover("⋮")
-    with show_menu:
-        if st.button("API 키 관리", use_container_width=True):
-            st.session_state["show_api_keys"] = True
-
-# --- API 키 관리 화면 ---
-if st.session_state.get("show_api_keys"):
-    st.markdown("---")
-    st.subheader("API 키 관리")
-
-    # 키 생성
-    with st.form("create_key_form"):
-        key_name = st.text_input("키 이름 (용도 설명)", placeholder="예: 모바일 앱")
-        submitted = st.form_submit_button("새 API 키 생성")
-        if submitted and key_name:
-            try:
-                resp = requests.post(f"{API_BASE_URL}/api/keys/create", json={"name": key_name})
-                if resp.status_code == 200:
-                    data = resp.json()
-                    st.success("키가 생성되었습니다. **Secret Key는 지금만 확인 가능합니다!**")
-                    st.code(f"API Key:    {data['api_key']}\nSecret Key: {data['secret_key']}", language="text")
-                else:
-                    st.error(f"오류: {resp.json().get('detail', '키 생성 실패')}")
-            except requests.ConnectionError:
-                st.error("서버에 연결할 수 없습니다. LangServe 서버가 실행 중인지 확인하세요.")
-
-    # API Endpoint URL
-    st.markdown("#### API Endpoint")
-    chat_url = f"{API_BASE_URL}/api/chat"
-    st.code(chat_url, language="text")
-
-    # 키 목록
-    st.markdown("#### 등록된 키 목록")
-    try:
-        resp = requests.get(f"{API_BASE_URL}/api/keys/list")
-        if resp.status_code == 200:
-            keys = resp.json()
-            if not keys:
-                st.info("등록된 API 키가 없습니다.")
-            for k in keys:
-                status = "활성" if k["is_active"] else "비활성"
-                col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
-                col1.text(f"{k['name']} ({k['api_key'][:12]}...)")
-                col2.text(f"{k['created_at'][:10]}")
-                col3.text(status)
-                if k["is_active"]:
-                    if col4.button("비활성화", key=f"revoke_{k['api_key']}"):
-                        requests.post(f"{API_BASE_URL}/api/keys/revoke/{k['api_key']}")
-                        st.rerun()
-                else:
-                    if col4.button("삭제", key=f"delete_{k['api_key']}"):
-                        requests.delete(f"{API_BASE_URL}/api/keys/delete/{k['api_key']}")
-                        st.rerun()
-    except requests.ConnectionError:
-        st.error("서버에 연결할 수 없습니다.")
-
-    # API 사용 가이드
-    with st.expander("API 사용 가이드"):
-        st.markdown(f"""
-**요청 필드**
-| 필드 | 필수 | 설명 |
-|------|------|------|
-| `message` | O | 질문 내용 |
-| `system_prompt` | X | 시스템 프롬프트 (기본: 한국어 AI 어시스턴트) |
-| `temperature` | X | 창의성 조절 0~1 (기본: 서버 설정값) |
-
-**요청 예시 (curl)**
-```bash
-curl -X POST {API_BASE_URL}/api/chat \\
-  -H "Content-Type: application/json" \\
-  -H "X-API-Key: jk-your-api-key" \\
-  -H "X-Secret-Key: sk-your-secret-key" \\
-  -d '{{"message": "안녕하세요", "system_prompt": "당신은 입학처 AI 상담원입니다.", "temperature": 0.7}}'
-```
-
-**요청 예시 (Python)**
-```python
-import requests
-
-resp = requests.post(
-    "{API_BASE_URL}/api/chat",
-    headers={{
-        "X-API-Key": "jk-your-api-key",
-        "X-Secret-Key": "sk-your-secret-key",
-    }},
-    json={{
-        "message": "안녕하세요",
-        "system_prompt": "당신은 입학처 AI 상담원입니다.",
-        "temperature": 0.7,
-    }}
-)
-data = resp.json()
-print(data["answer"])
-print(data.get("usage"))  # 토큰 사용량
-```
-
-**응답 형식**
-```json
-{{"answer": "답변 내용", "usage": {{"input_tokens": 150, "output_tokens": 200, "total_tokens": 350}}}}
-```
-
-**헬스체크**
-```bash
-curl {API_BASE_URL}/api/health
-# {{"status": "ok", "model": "exaone3.5:32b"}}
-```
-
-**오류 코드**
-- `401` — 인증 헤더 누락
-- `403` — 유효하지 않은 키
-- `429` — 요청 한도 초과 (분당 30회)
-        """)
-
-    if st.button("닫기"):
-        st.session_state["show_api_keys"] = False
-        st.rerun()
-    st.markdown("---")
+st.title("JInhak Local 모델 테스트")
 
 
 if "messages" not in st.session_state:
@@ -322,10 +202,64 @@ def format_docs(docs):
 
 
 import shutil
+from langchain_ollama import ChatOllama
+
+# 사용 가능한 모델
+GUI_MODELS = {
+    "exaone3.5:32b": "EXAONE 3.5 32B (기본)",
+    "huihui_ai/kanana-nano-abliterated": "Kanana Nano (Kakao)",
+    "gemma4:26b": "Gemma 4 26B MoE (Google)",
+}
+MULTIMODAL_MODELS = {"gemma4:26b"}
 
 with st.sidebar:
+    st.markdown("**모델 선택**")
+    selected_model = st.selectbox(
+        "LLM 모델",
+        options=list(GUI_MODELS.keys()),
+        format_func=lambda x: GUI_MODELS[x],
+        index=0,
+    )
+
+    # 멀티모달 모델 선택 시 이미지 첨부
+    if selected_model in MULTIMODAL_MODELS:
+        img_upload = st.file_uploader(
+            "이미지 첨부",
+            type=["png", "jpg", "jpeg", "gif", "webp"],
+            accept_multiple_files=True,
+            key="chat_images",
+            help="이미지를 첨부하면 멀티모달 모델이 분석합니다",
+        )
+        if img_upload:
+            image_data = []
+            for img in img_upload:
+                img_bytes = img.read()
+                image_data.append({
+                    "bytes": img_bytes,
+                    "type": img.type.split("/")[-1],
+                    "name": img.name,
+                })
+            st.session_state["pending_images"] = image_data
+        else:
+            st.session_state["pending_images"] = []
+
+        # 동영상 첨부
+        video_upload = st.file_uploader(
+            "동영상 첨부",
+            type=["mp4", "avi", "mov", "mkv", "webm"],
+            key="chat_video",
+            help="동영상을 업로드하면 음성을 텍스트로 변환하고 주요 장면을 분석합니다",
+        )
+        if video_upload:
+            st.session_state["pending_video"] = {
+                "bytes": video_upload.read(),
+                "name": video_upload.name,
+            }
+        else:
+            st.session_state["pending_video"] = None
+
     file = st.file_uploader(
-        "파일 업로드",
+        "RAG 파일 업로드",
         type=["pdf", "txt", "docx"],
         accept_multiple_files=True,
     )
@@ -364,6 +298,123 @@ with st.sidebar:
             del st.session_state["confirm_delete"]
             st.rerun()
 
+    # --- API 키 관리 (사이드바 하단) ---
+    st.markdown("---")
+    with st.expander("API 키 관리"):
+        # 키 생성
+        with st.form("create_key_form"):
+            key_name = st.text_input("키 이름", placeholder="예: 모바일 앱")
+            submitted = st.form_submit_button("새 API 키 생성")
+            if submitted and key_name:
+                try:
+                    resp = requests.post(f"{API_BASE_URL}/api/keys/create", json={"name": key_name})
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        st.success("**Secret Key는 지금만 확인 가능!**")
+                        st.code(f"API Key:    {data['api_key']}\nSecret Key: {data['secret_key']}", language="text")
+                    else:
+                        st.error("키 생성 실패")
+                except requests.ConnectionError:
+                    st.error("서버에 연결할 수 없습니다.")
+
+        # Endpoint
+        st.caption("API Endpoint")
+        st.code(f"{API_BASE_URL}/api/chat", language="text")
+
+        # 키 목록
+        try:
+            resp = requests.get(f"{API_BASE_URL}/api/keys/list")
+            if resp.status_code == 200:
+                keys = resp.json()
+                if not keys:
+                    st.info("등록된 키 없음")
+                for k in keys:
+                    status = "활성" if k["is_active"] else "비활성"
+                    st.markdown(f"**{k['name']}** `{k['api_key'][:12]}...` ({status})")
+                    if k["is_active"]:
+                        if st.button("비활성화", key=f"revoke_{k['api_key']}"):
+                            requests.post(f"{API_BASE_URL}/api/keys/revoke/{k['api_key']}")
+                            st.rerun()
+                    else:
+                        if st.button("삭제", key=f"delete_{k['api_key']}"):
+                            requests.delete(f"{API_BASE_URL}/api/keys/delete/{k['api_key']}")
+                            st.rerun()
+        except requests.ConnectionError:
+            st.error("서버에 연결할 수 없습니다.")
+
+        st.caption("**API 사용 가이드**")
+        st.markdown(f"""
+**Endpoint**
+`POST {API_BASE_URL}/api/chat`
+
+**요청 필드**
+
+| 필드 | 필수 | 설명 |
+|------|:----:|------|
+| `message` | O | 사용자 질문 |
+| `system_prompt` | - | AI 역할/지시 설정 |
+| `model` | - | 모델 선택 (기본: exaone3.5:32b) |
+| `temperature` | - | 창의성 0~1 (기본: 0.5) |
+| `images` | - | base64 이미지 배열 (gemma4만) |
+
+**`message` vs `system_prompt`**
+- `system_prompt`: AI의 역할과 행동 규칙을 지시 (시스템 프롬프트)
+- `message`: 실제 사용자 질문 (사용자 프롬프트)
+        """)
+        st.code('''{
+  "system_prompt": "당신은 연세대 입학처 AI 상담원입니다. 모집요강 기반으로만 답변하세요.",
+  "message": "수시 추천형 지원 자격이 뭐야?",
+  "model": "exaone3.5:32b",
+  "temperature": 0.5
+}''', language="json")
+        st.markdown(f"""
+**모델 목록**
+
+| model | 멀티모달 | 설명 |
+|-------|:--------:|------|
+| `exaone3.5:32b` | - | LG AI 한국어 32B (기본) |
+| `huihui_ai/kanana-nano-abliterated` | - | Kakao 이중언어 |
+| `gemma4:26b` | O | Google 멀티모달 MoE |
+
+**curl 예시 - 기본**
+```bash
+curl -X POST {API_BASE_URL}/api/chat \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: jk-..." \\
+  -H "X-Secret-Key: sk-..." \\
+  -d '{{"message": "안녕하세요"}}'
+```
+
+**curl 예시 - 시스템 프롬프트 + 모델 지정**
+```bash
+curl -X POST {API_BASE_URL}/api/chat \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: jk-..." \\
+  -H "X-Secret-Key: sk-..." \\
+  -d '{{"message": "장학금 종류 알려줘", "system_prompt": "당신은 입학처 상담원입니다.", "model": "gemma4:26b", "temperature": 0.3}}'
+```
+
+**curl 예시 - 이미지 분석 (gemma4 전용)**
+```bash
+curl -X POST {API_BASE_URL}/api/chat \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: jk-..." \\
+  -H "X-Secret-Key: sk-..." \\
+  -d '{{"message": "이 이미지를 설명해줘", "model": "gemma4:26b", "images": ["<base64>"]}}'
+```
+
+**응답 형식**
+```json
+{{"answer": "답변", "model": "exaone3.5:32b", "usage": {{"input_tokens": 150, "output_tokens": 200, "total_tokens": 350}}}}
+```
+
+**기타 엔드포인트**
+- `GET {API_BASE_URL}/api/health` — 서버 상태
+- `GET {API_BASE_URL}/api/models` — 모델 목록
+
+**오류 코드**: `400` 모델 오류 | `401` 인증 누락 | `403` 키 무효 | `429` 한도 초과(분당 30회)
+        """)
+
 active_files = file if file else []
 
 if active_files or cached_files:
@@ -384,26 +435,130 @@ if active_files or cached_files:
 
 print_history()
 
+import base64
+from langchain_core.messages import HumanMessage as HMsg, SystemMessage as SMsg
 
-if user_input := st.chat_input():
+# 첨부 상태 관리
+if "pending_images" not in st.session_state:
+    st.session_state["pending_images"] = []
+if "pending_video" not in st.session_state:
+    st.session_state["pending_video"] = None
+
+# 첨부 미리보기
+if st.session_state["pending_images"]:
+    preview_cols = st.columns(min(len(st.session_state["pending_images"]), 4))
+    for i, img_data in enumerate(st.session_state["pending_images"]):
+        preview_cols[i % 4].image(img_data["bytes"], width=80)
+if st.session_state.get("pending_video"):
+    st.info(f"동영상 첨부됨: {st.session_state['pending_video']['name']}")
+
+# chat_input은 항상 단독 사용 (하단 고정 유지)
+user_input = st.chat_input("메시지를 입력하세요")
+
+uploaded_images = []
+pending_video = None
+if user_input:
+    if st.session_state["pending_images"]:
+        uploaded_images = st.session_state["pending_images"]
+        st.session_state["pending_images"] = []
+    if st.session_state.get("pending_video"):
+        pending_video = st.session_state["pending_video"]
+        st.session_state["pending_video"] = None
+
+if user_input:
     add_history("user", user_input)
     st.chat_message("user").write(user_input)
+
+    # 이미지 미리보기
+    if uploaded_images:
+        with st.chat_message("user"):
+            cols = st.columns(min(len(uploaded_images), 4))
+            for i, img in enumerate(uploaded_images):
+                cols[i % 4].image(img["bytes"], width=120)
+
     with st.chat_message("assistant"):
-        # ngrok remote 주소 설정
-        ollama = RemoteRunnable(LANGSERVE_ENDPOINT, headers={"ngrok-skip-browser-warning": "1"})
-        # LM Studio 모델 설정
-        # ollama = ChatOpenAI(
-        #     base_url="http://localhost:1234/v1",
-        #     api_key="lm-studio",
-        #     model="teddylee777/EEVE-Korean-Instruct-10.8B-v1.0-gguf",
-        #     streaming=True,
-        #     callbacks=[StreamingStdOutCallbackHandler()],  # 스트리밍 콜백 추가
-        # )
+        model_label = GUI_MODELS[selected_model]
+        ollama = ChatOllama(model=selected_model, temperature=0.5)
         chat_container = st.empty()
-        if active_files or cached_files:
+
+        if pending_video and selected_model in MULTIMODAL_MODELS:
+            # 동영상 처리: Whisper STT + Gemma 4 프레임 분석
+            import tempfile as _tmpfile
+            chat_container.markdown("동영상 분석 중...")
+
+            # 임시 파일에 저장
+            tmp_dir = _tmpfile.mkdtemp()
+            video_path = os.path.join(tmp_dir, pending_video["name"])
+            with open(video_path, "wb") as vf:
+                vf.write(pending_video["bytes"])
+
+            try:
+                from video_processor import process_video
+                result = process_video(video_path, whisper_model="base", max_frames=5)
+                transcript = result["transcript"]["text"]
+                frames = result["frames"]
+
+                # 프레임 + 음성 텍스트를 Gemma 4에 전달
+                if frames:
+                    content_blocks = []
+                    for frame in frames:
+                        content_blocks.append({
+                            "type": "image_url",
+                            "image_url": f"data:image/jpeg;base64,{frame['base64']}",
+                        })
+                    content_blocks.append({
+                        "type": "text",
+                        "text": f"동영상 음성 내용:\n{transcript}\n\n질문: {user_input}",
+                    })
+
+                    messages = [
+                        SMsg(content="You are a helpful AI assistant that analyzes videos. Answer in Korean."),
+                        HMsg(content=content_blocks),
+                    ]
+                    chunks = []
+                    for chunk in ollama.stream(messages):
+                        text = chunk.content if hasattr(chunk, "content") else str(chunk)
+                        chunks.append(text)
+                        chat_container.markdown("".join(chunks))
+                else:
+                    # 프레임 없으면 음성 텍스트만으로 답변
+                    prompt = ChatPromptTemplate.from_template(
+                        "다음은 동영상의 음성을 텍스트로 변환한 내용입니다:\n{transcript}\n\n질문: {input}"
+                    )
+                    chain = prompt | ollama | StrOutputParser()
+                    chunks = []
+                    for chunk in chain.stream({"transcript": transcript, "input": user_input}):
+                        chunks.append(chunk)
+                        chat_container.markdown("".join(chunks))
+            finally:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+
+        elif uploaded_images and selected_model in MULTIMODAL_MODELS:
+            # 멀티모달: 이미지 + 텍스트 함께 전송
+            content_blocks = []
+            for img in uploaded_images:
+                img_b64 = base64.b64encode(img["bytes"]).decode()
+                content_blocks.append({
+                    "type": "image_url",
+                    "image_url": f"data:image/{img['type']};base64,{img_b64}",
+                })
+            content_blocks.append({"type": "text", "text": user_input})
+
+            messages = [
+                SMsg(content="You are a helpful AI assistant. Answer in Korean."),
+                HMsg(content=content_blocks),
+            ]
+
+            chunks = []
+            for chunk in ollama.stream(messages):
+                text = chunk.content if hasattr(chunk, "content") else str(chunk)
+                chunks.append(text)
+                chat_container.markdown("".join(chunks))
+
+        elif active_files or cached_files:
+            # RAG 모드
             prompt = ChatPromptTemplate.from_template(RAG_PROMPT_TEMPLATE)
 
-            # 체인을 생성합니다.
             rag_chain = (
                 {
                     "context": retriever | format_docs,
@@ -413,24 +568,27 @@ if user_input := st.chat_input():
                 | ollama
                 | StrOutputParser()
             )
-            # 문서에 대한 질의를 입력하고, 답변을 출력합니다.
-            answer = rag_chain.stream(user_input)  # 문서에 대한 질의
+            answer = rag_chain.stream(user_input)
             chunks = []
             for chunk in answer:
                 chunks.append(chunk)
                 chat_container.markdown("".join(chunks))
-            add_history("ai", "".join(chunks))
         else:
+            # 일반 텍스트 채팅
             prompt = ChatPromptTemplate.from_template(
                 "다음의 질문에 간결하게 답변해 주세요:\n{input}"
             )
 
-            # 체인을 생성합니다.
             chain = prompt | ollama | StrOutputParser()
 
-            answer = chain.stream(user_input)  # 문서에 대한 질의
+            answer = chain.stream(user_input)
             chunks = []
             for chunk in answer:
                 chunks.append(chunk)
                 chat_container.markdown("".join(chunks))
-            add_history("ai", "".join(chunks))
+
+        # 답변 완료 후 모델명 뱃지 표시
+        full_answer = "".join(chunks)
+        badge = f"\n\n`{model_label}`"
+        chat_container.markdown(full_answer + badge)
+        add_history("ai", full_answer + badge)

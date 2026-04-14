@@ -70,6 +70,8 @@ def generate_key(name: str) -> Tuple[str, str]:
 
 def validate_key(api_key: str, secret_key: str) -> bool:
     """api_key + secret_key 조합이 유효하고 활성 상태인지 검증."""
+    api_key = api_key.strip()
+    secret_key = secret_key.strip()
     conn = _get_db()
     try:
         row = conn.execute(
