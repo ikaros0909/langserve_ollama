@@ -135,10 +135,24 @@ def split_audio(audio_path: str, output_dir: str, chunk_seconds: int = 600) -> L
     return chunk_paths if chunk_paths else [audio_path]
 
 
+def _transcribe_single(model, audio_path: str) -> Dict:
+    """단일 파일을 Whisper로 변환."""
+    result = model.transcribe(
+        audio_path,
+        language="ko",
+        condition_on_previous_text=False,  # hallucination 루프 방지
+        no_speech_threshold=0.6,
+        compression_ratio_threshold=2.4,
+        logprob_threshold=-1.0,
+        verbose=False,
+    )
+    return result
+
+
 def transcribe_audio(audio_path: str, model_size: str = "base") -> Dict:
     """
     Whisper로 음성을 텍스트로 변환.
-    Whisper는 내부적으로 30초 단위로 처리하므로 긴 파일도 전체 처리 가능.
+    5분 단위 청크 분할로 긴 음성도 안정적으로 처리.
     """
     import whisper
     import logging
@@ -149,25 +163,80 @@ def transcribe_audio(audio_path: str, model_size: str = "base") -> Dict:
 
     model = whisper.load_model(model_size)
 
-    # Whisper에 전체 파일 전달 — 내부적으로 30초 윈도우로 순차 처리
-    result = model.transcribe(
-        audio_path,
-        language="ko",
-        condition_on_previous_text=True,
-        verbose=False,
-    )
+    # 5분 이하: 단일 처리
+    if duration <= 300:
+        result = _transcribe_single(model, audio_path)
+        segments = [
+            {"start": round(s["start"], 2), "end": round(s["end"], 2), "text": s["text"]}
+            for s in result["segments"]
+        ]
+        logger.info(f"[STT] 완료: {len(segments)}개 세그먼트")
+        return {"text": result["text"], "segments": segments, "language": result.get("language", "ko")}
 
-    segments = [
-        {"start": round(seg["start"], 2), "end": round(seg["end"], 2), "text": seg["text"]}
-        for seg in result["segments"]
-    ]
+    # 5분 초과: 5분 단위 청크 분할
+    chunk_seconds = 300
+    all_text = []
+    all_segments = []
+    time_offset = 0.0
+    chunk_idx = 0
 
-    logger.info(f"[STT] 완료: {len(segments)}개 세그먼트, 총 {len(result['text'])}자")
+    with tempfile.TemporaryDirectory() as chunk_dir:
+        start = 0.0
+        while start < duration:
+            chunk_path = os.path.join(chunk_dir, f"chunk_{chunk_idx:03d}.wav")
+            try:
+                subprocess.run(
+                    [
+                        "ffmpeg", "-i", audio_path,
+                        "-ss", str(start),
+                        "-t", str(chunk_seconds),
+                        "-acodec", "pcm_s16le",
+                        "-ar", "16000",
+                        "-ac", "1",
+                        "-y",
+                        chunk_path,
+                    ],
+                    capture_output=True,
+                    check=True,
+                )
+            except subprocess.CalledProcessError as e:
+                logger.error(f"[STT] 청크 {chunk_idx} ffmpeg 실패: {e}")
+                start += chunk_seconds
+                chunk_idx += 1
+                continue
+
+            if not os.path.exists(chunk_path) or os.path.getsize(chunk_path) <= 44:
+                logger.warning(f"[STT] 청크 {chunk_idx} 빈 파일, 건너뜀")
+                start += chunk_seconds
+                chunk_idx += 1
+                continue
+
+            chunk_duration = get_audio_duration(chunk_path)
+            logger.info(f"[STT] 청크 {chunk_idx} 처리 중: {start:.0f}~{start + chunk_duration:.0f}초")
+
+            try:
+                result = _transcribe_single(model, chunk_path)
+                all_text.append(result["text"])
+                for seg in result["segments"]:
+                    all_segments.append({
+                        "start": round(seg["start"] + time_offset, 2),
+                        "end": round(seg["end"] + time_offset, 2),
+                        "text": seg["text"],
+                    })
+            except Exception as e:
+                logger.error(f"[STT] 청크 {chunk_idx} Whisper 실패: {e}")
+
+            time_offset += chunk_duration
+            start += chunk_seconds
+            chunk_idx += 1
+
+    full_text = " ".join(all_text)
+    logger.info(f"[STT] 전체 완료: {len(all_segments)}개 세그먼트, {len(full_text)}자")
 
     return {
-        "text": result["text"],
-        "segments": segments,
-        "language": result.get("language", "ko"),
+        "text": full_text,
+        "segments": all_segments,
+        "language": "ko",
     }
 
 
