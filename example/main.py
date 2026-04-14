@@ -165,7 +165,11 @@ def _build_retriever(file_path, cache_dir):
     else:
         embeddings = OpenAIEmbeddings()
 
-    cached_embeddings = CacheBackedEmbeddings.from_bytes_store(embeddings, cache_dir)
+    from hashlib import sha256
+    cached_embeddings = CacheBackedEmbeddings.from_bytes_store(
+        embeddings, cache_dir,
+        key_encoder=lambda x: sha256(x).hexdigest(),
+    )
 
     # FAISS 인덱스가 이미 저장되어 있으면 로드, 없으면 생성 후 저장
     faiss_path = str(cache_dir.root_path) + "_faiss"
@@ -408,11 +412,68 @@ curl -X POST {API_BASE_URL}/api/chat \\
 {{"answer": "답변", "model": "exaone3.5:32b", "usage": {{"input_tokens": 150, "output_tokens": 200, "total_tokens": 350}}}}
 ```
 
+---
+
+**자막/스크립트 생성**
+`POST {API_BASE_URL}/api/transcribe` (multipart/form-data)
+
+| 필드 | 필수 | 설명 |
+|------|:----:|------|
+| `file` | O | 영상 또는 음성 파일 |
+| `whisper_model` | - | tiny, base(기본), small, medium, large |
+| `format` | - | json(기본), srt, vtt, text |
+| `language` | - | ko, en, 빈값=자동감지 |
+
+지원 파일: mp4, avi, mov, mkv, webm, mp3, wav, m4a, ogg, flac
+
+```bash
+# 영상 → SRT 자막
+curl -X POST {API_BASE_URL}/api/transcribe \\
+  -H "X-API-Key: jk-..." -H "X-Secret-Key: sk-..." \\
+  -F "file=@강의.mp4" \\
+  -F "format=srt" \\
+  -F "language=ko" \\
+  --max-time 1800 -o result.srt
+```
+
+```bash
+# 음성 → 텍스트만
+curl -X POST {API_BASE_URL}/api/transcribe \\
+  -H "X-API-Key: jk-..." -H "X-Secret-Key: sk-..." \\
+  -F "file=@녹음.mp3" \\
+  -F "format=text"
+```
+
+---
+
+**동영상 분석 (Whisper + Gemma 4)**
+`POST {API_BASE_URL}/api/video` (multipart/form-data)
+
+| 필드 | 필수 | 설명 |
+|------|:----:|------|
+| `file` | O | 동영상 파일 |
+| `message` | - | 질문 (기본: 동영상 내용 분석) |
+| `model` | - | 분석 모델 (기본: gemma4:26b) |
+| `whisper_model` | - | STT 모델 (기본: base) |
+| `max_frames` | - | 분석할 장면 수 (기본: 5) |
+| `language` | - | ko, en, 빈값=자동감지 |
+
+```bash
+curl -X POST {API_BASE_URL}/api/video \\
+  -H "X-API-Key: jk-..." -H "X-Secret-Key: sk-..." \\
+  -F "file=@강의.mp4" \\
+  -F "message=이 강의의 핵심 내용을 요약해줘" \\
+  -F "language=ko" \\
+  --max-time 1800
+```
+
+---
+
 **기타 엔드포인트**
 - `GET {API_BASE_URL}/api/health` — 서버 상태
 - `GET {API_BASE_URL}/api/models` — 모델 목록
 
-**오류 코드**: `400` 모델 오류 | `401` 인증 누락 | `403` 키 무효 | `429` 한도 초과(분당 30회)
+**오류 코드**: `400` 모델/파일 오류 | `401` 인증 누락 | `403` 키 무효 | `429` 한도 초과(분당 30회)
         """)
 
 active_files = file if file else []
