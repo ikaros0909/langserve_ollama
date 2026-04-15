@@ -69,15 +69,17 @@ class APIAuthMiddleware(BaseHTTPMiddleware):
         if path == "/api/health":
             return await call_next(request)
 
-        # 키 관리 엔드포인트는 로컬에서만 접근 허용
-        if path.startswith("/api/keys"):
+        # 키 관리/RAG 관리 엔드포인트는 로컬에서만 접근 허용
+        if path.startswith("/api/keys") or path.startswith("/api/rag"):
             if client_host in ("127.0.0.1", "::1", "localhost"):
                 return await call_next(request)
-            logger.warning(f"[AUTH] 키 관리 접근 거부: client={client_host}, path={path}")
-            return JSONResponse(
-                status_code=403,
-                content={"error": "키 관리는 로컬에서만 접근 가능합니다."},
-            )
+            # 외부에서 RAG 접근 시 인증 필요 (아래로 계속)
+            if path.startswith("/api/keys"):
+                logger.warning(f"[AUTH] 키 관리 접근 거부: client={client_host}, path={path}")
+                return JSONResponse(
+                    status_code=403,
+                    content={"error": "키 관리는 로컬에서만 접근 가능합니다."},
+                )
 
         api_key = (request.headers.get("X-API-Key") or "").strip()
         secret_key = (request.headers.get("X-Secret-Key") or "").strip()
@@ -464,12 +466,12 @@ async def list_rag_files(name: str):
 @app.post("/api/rag/upload")
 async def upload_rag_file(
     file: UploadFile = File(...),
-    collection: str = Form(...),
+    collection: str = Form(default="default"),
     description: str = Form(default=""),
 ):
     """
-    PDF/문서를 지정한 RAG 컬렉션에 업로드.
-    컬렉션이 없으면 자동 생성.
+    PDF/문서/이미지를 지정한 RAG 컬렉션에 업로드.
+    컬렉션이 없으면 자동 생성. collection 미지정시 'default' 사용.
     """
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
