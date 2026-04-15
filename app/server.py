@@ -401,11 +401,29 @@ async def api_chat_upload(
 
     if images:
         from image_preprocess import preprocess_handwriting
+
+        # 전처리 결과 저장 디렉토리
+        debug_dir = os.path.join(os.path.dirname(__file__), "..", "data", "preprocessed_images")
+        os.makedirs(debug_dir, exist_ok=True)
+
         content_blocks = []
         for img_file in images:
             img_bytes = await img_file.read()
+
+            # 원본 저장
+            orig_path = os.path.join(debug_dir, f"original_{img_file.filename}")
+            with open(orig_path, "wb") as df:
+                df.write(img_bytes)
+
             # 손글씨 이미지 전처리
             img_bytes = preprocess_handwriting(img_bytes)
+
+            # 전처리 결과 저장
+            proc_path = os.path.join(debug_dir, f"processed_{img_file.filename}.png")
+            with open(proc_path, "wb") as df:
+                df.write(img_bytes)
+            print(f"[전처리] 저장: {proc_path}", flush=True)
+
             img_b64 = b64.b64encode(img_bytes).decode()
             content_blocks.append({
                 "type": "image_url",
