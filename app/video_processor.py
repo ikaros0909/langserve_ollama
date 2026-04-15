@@ -135,7 +135,7 @@ def split_audio(audio_path: str, output_dir: str, chunk_seconds: int = 600) -> L
     return chunk_paths if chunk_paths else [audio_path]
 
 
-def _transcribe_single(model, audio_path: str, language: Optional[str] = None) -> Dict:
+def _transcribe_single(model, audio_path: str, language: Optional[str] = None, prompt: Optional[str] = None) -> Dict:
     """단일 파일을 Whisper로 변환. language=None이면 자동 감지."""
     kwargs = {
         "condition_on_previous_text": False,
@@ -146,11 +146,13 @@ def _transcribe_single(model, audio_path: str, language: Optional[str] = None) -
     }
     if language:
         kwargs["language"] = language
+    if prompt:
+        kwargs["initial_prompt"] = prompt
     result = model.transcribe(audio_path, **kwargs)
     return result
 
 
-def transcribe_audio(audio_path: str, model_size: str = "base", language: Optional[str] = None) -> Dict:
+def transcribe_audio(audio_path: str, model_size: str = "base", language: Optional[str] = None, prompt: Optional[str] = None) -> Dict:
     """
     Whisper로 음성을 텍스트로 변환.
     항상 5분 단위 청크 분할로 처리 (긴 음성 안정성 보장).
@@ -211,7 +213,7 @@ def transcribe_audio(audio_path: str, model_size: str = "base", language: Option
             print(f"[STT] 청크 {chunk_idx+1}/{total_chunks} 처리 중: {chunk_start/60:.1f}분 ~ {end_time/60:.1f}분", flush=True)
 
             try:
-                result = _transcribe_single(model, chunk_path, language)
+                result = _transcribe_single(model, chunk_path, language, prompt)
                 chunk_text = result["text"]
                 chunk_segs = result["segments"]
                 all_text.append(chunk_text)
@@ -249,7 +251,7 @@ def frames_to_base64(frame_paths: List[str]) -> List[Dict]:
     return results
 
 
-def process_video(video_path: str, whisper_model: str = "base", max_frames: int = 5, language: Optional[str] = None) -> Dict:
+def process_video(video_path: str, whisper_model: str = "base", max_frames: int = 5, language: Optional[str] = None, prompt: Optional[str] = None) -> Dict:
     """
     동영상 처리 통합 함수.
     반환: {"transcript": {...}, "frames": [...]}
@@ -260,7 +262,7 @@ def process_video(video_path: str, whisper_model: str = "base", max_frames: int 
         # 1) 음성 추출 + STT
         audio_path = os.path.join(tmp_dir, "audio.wav")
         if extract_audio(video_path, audio_path):
-            result["transcript"] = transcribe_audio(audio_path, whisper_model, language)
+            result["transcript"] = transcribe_audio(audio_path, whisper_model, language, prompt)
         else:
             result["transcript"] = {"text": "(음성을 추출할 수 없습니다)", "segments": [], "language": ""}
 

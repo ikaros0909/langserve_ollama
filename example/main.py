@@ -425,8 +425,14 @@ curl -X POST {API_BASE_URL}/api/chat \\
 | `whisper_model` | - | tiny, base(기본), small, medium, large |
 | `format` | - | json(기본), srt, vtt, text |
 | `language` | - | ko, en, 빈값=자동감지 |
+| `prompt` | - | Whisper 힌트 (전문 용어, 고유명사, 화자 등) |
 
 지원 파일: mp4, avi, mov, mkv, webm, mp3, wav, m4a, ogg, flac
+
+`prompt` 활용 예시:
+- 전문 용어 힌트: `"LangChain, RAG, Ollama, Streamlit"`
+- 화자 표기 힌트: `"화자: 김교수, 이학생. 김교수가 강의하고 이학생이 질문한다."`
+- 표기법 지정: `"연세대학교, 2026학년도, 수시모집"`
 
 ```bash
 # 영상 → SRT 자막
@@ -435,6 +441,7 @@ curl -X POST {API_BASE_URL}/api/transcribe \\
   -F "file=@강의.mp4" \\
   -F "format=srt" \\
   -F "language=ko" \\
+  -F "prompt=LangChain, RAG, Ollama" \\
   --max-time 1800 -o result.srt
 ```
 

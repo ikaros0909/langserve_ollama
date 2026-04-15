@@ -393,6 +393,7 @@ async def api_transcribe(
     whisper_model: str = Form(default="base"),
     format: str = Form(default="json"),
     language: str = Form(default=""),
+    prompt: str = Form(default=""),
 ):
     """
     영상 또는 음성 파일 → 자막/스크립트 생성.
@@ -401,6 +402,7 @@ async def api_transcribe(
     - whisper_model: tiny, base, small, medium, large (클수록 정확, 느림)
     - language: ko(한국어), en(영어), 빈값(자동감지)
     - format: json (기본), srt, vtt, text
+    - prompt: Whisper 힌트 (전문 용어, 고유명사, 화자 이름 등)
     """
     SUPPORTED_VIDEO = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
     SUPPORTED_AUDIO = {".mp3", ".wav", ".m4a", ".ogg", ".flac"}
@@ -437,7 +439,7 @@ async def api_transcribe(
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             ThreadPoolExecutor(max_workers=1),
-            lambda: video_processor.transcribe_audio(audio_path, whisper_model, language=language or None),
+            lambda: video_processor.transcribe_audio(audio_path, whisper_model, language=language or None, prompt=prompt or None),
         )
 
         from starlette.responses import PlainTextResponse
