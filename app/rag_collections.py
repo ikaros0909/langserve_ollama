@@ -208,12 +208,18 @@ def list_collections() -> List[Dict]:
 
 
 def add_file_to_collection(name: str, file_path: str, filename: str) -> Dict:
-    """파일을 컬렉션에 추가 (임베딩 후 FAISS에 저장)."""
+    """파일을 컬렉션에 추가 (임베딩 후 FAISS에 저장). 같은 파일명이면 덮어쓰기."""
     meta = _load_metadata()
     if name not in meta:
         return {"error": f"컬렉션 '{name}'이 존재하지 않습니다."}
 
     col_dir = os.path.join(BASE_DIR, name)
+
+    # 같은 파일명이 이미 있으면 삭제 후 재등록 (중복 방지)
+    if filename in meta[name]["files"]:
+        print(f"[RAG] 기존 파일 교체: {filename} → 컬렉션 '{name}'", flush=True)
+        delete_file_from_collection(name, filename)
+        meta = _load_metadata()  # 메타 다시 로드
 
     # 파일 복사
     dest_path = os.path.join(col_dir, "files", filename)
