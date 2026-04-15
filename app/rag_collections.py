@@ -55,6 +55,36 @@ def _get_embeddings():
     )
 
 
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff"}
+
+
+def _extract_text_from_image(file_path: str) -> str:
+    """Gemma 4로 이미지에서 텍스트/내용 추출."""
+    import base64
+    try:
+        from langchain_ollama import ChatOllama
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        with open(file_path, "rb") as f:
+            img_b64 = base64.b64encode(f.read()).decode()
+
+        ext = os.path.splitext(file_path)[1].lstrip(".")
+        llm = ChatOllama(model="gemma4:26b", temperature=0)
+        result = llm.invoke([
+            SystemMessage(content="이미지의 모든 텍스트와 내용을 정확하게 추출하여 한국어로 정리해주세요. 표가 있으면 표 형식을 유지하세요."),
+            HumanMessage(content=[
+                {"type": "image_url", "image_url": f"data:image/{ext};base64,{img_b64}"},
+                {"type": "text", "text": "이 이미지의 모든 내용을 텍스트로 추출해주세요."},
+            ]),
+        ])
+        text = result.content if hasattr(result, "content") else str(result)
+        print(f"[RAG] 이미지 텍스트 추출 완료: {len(text)}자", flush=True)
+        return text
+    except Exception as e:
+        print(f"[RAG] 이미지 텍스트 추출 실패: {e}", flush=True)
+        return ""
+
+
 def _build_docs(file_path: str) -> List[Document]:
     """파일을 청크로 분리하여 Document 리스트 반환."""
     text_splitter = RecursiveCharacterTextSplitter(
@@ -63,6 +93,18 @@ def _build_docs(file_path: str) -> List[Document]:
         separators=["\n\n", "\n", " ", ""],
         length_function=len,
     )
+
+    ext = os.path.splitext(file_path)[1].lower()
+
+    # 이미지: Gemma 4로 내용 추출 후 청크 분할
+    if ext in IMAGE_EXTENSIONS:
+        text = _extract_text_from_image(file_path)
+        if not text:
+            return []
+        docs = text_splitter.create_documents(
+            [text], metadatas=[{"source_type": "image", "source_file": os.path.basename(file_path)}]
+        )
+        return docs
 
     docs = []
     if file_path.endswith(".pdf"):
