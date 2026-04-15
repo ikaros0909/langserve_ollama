@@ -472,12 +472,12 @@ async def list_rag_files(name: str):
 
 @app.post("/api/rag/upload")
 async def upload_rag_file(
-    file: UploadFile = File(...),
+    files: List[UploadFile] = File(...),
     collection: str = Form(default="default"),
     description: str = Form(default=""),
 ):
     """
-    PDF/문서/이미지를 지정한 RAG 컬렉션에 업로드.
+    PDF/문서/이미지를 지정한 RAG 컬렉션에 업로드. 여러 파일 동시 업로드 가능.
     컬렉션이 없으면 자동 생성. collection 미지정시 'default' 사용.
     """
     import asyncio
@@ -489,20 +489,25 @@ async def upload_rag_file(
         rag_collections.create_collection(collection, description)
 
     tmp_dir = tempfile.mkdtemp()
-    file_path = os.path.join(tmp_dir, file.filename)
+    results = []
     try:
-        with open(file_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
+        for file in files:
+            file_path = os.path.join(tmp_dir, file.filename)
+            with open(file_path, "wb") as f:
+                content = await file.read()
+                f.write(content)
 
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            ThreadPoolExecutor(max_workers=1),
-            lambda: rag_collections.add_file_to_collection(collection, file_path, file.filename),
-        )
-        if "error" in result:
-            raise HTTPException(400, result["error"])
-        return result
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                ThreadPoolExecutor(max_workers=1),
+                lambda fp=file_path, fn=file.filename: rag_collections.add_file_to_collection(collection, fp, fn),
+            )
+            results.append(result)
+
+        errors = [r for r in results if "error" in r]
+        if errors:
+            raise HTTPException(400, errors)
+        return {"collection": collection, "uploaded": results}
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
