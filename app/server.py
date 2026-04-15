@@ -341,8 +341,14 @@ async def api_video(
             content = await file.read()
             f.write(content)
 
-        # 동영상 처리: 음성 추출 + STT + 프레임 추출
-        result = video_processor.process_video(video_path, whisper_model, max_frames, language=language or None)
+        # 동영상 처리: 음성 추출 + STT + 프레임 추출 (블로킹 → 스레드풀)
+        import asyncio
+        from concurrent.futures import ThreadPoolExecutor
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            ThreadPoolExecutor(max_workers=1),
+            lambda: video_processor.process_video(video_path, whisper_model, max_frames, language=language or None),
+        )
         transcript = result["transcript"]["text"]
         frames = result["frames"]
 
@@ -410,6 +416,9 @@ async def api_transcribe(
     if format not in ("json", "srt", "vtt", "text"):
         raise HTTPException(400, "format은 json, srt, vtt, text 중 하나여야 합니다.")
 
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
     tmp_dir = tempfile.mkdtemp()
     file_path = os.path.join(tmp_dir, file.filename)
     try:
@@ -424,8 +433,12 @@ async def api_transcribe(
             if not video_processor.extract_audio(file_path, audio_path):
                 raise HTTPException(500, "음성 추출에 실패했습니다.")
 
-        # Whisper 변환
-        result = video_processor.transcribe_audio(audio_path, whisper_model, language=language or None)
+        # Whisper 변환 (블로킹 작업을 스레드풀에서 실행)
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            ThreadPoolExecutor(max_workers=1),
+            lambda: video_processor.transcribe_audio(audio_path, whisper_model, language=language or None),
+        )
 
         if format == "text":
             return {"text": result["text"], "language": result["language"]}
