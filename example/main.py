@@ -571,7 +571,7 @@ curl -X POST {API_BASE_URL}/api/video \\
 | `POST /api/rag/collections` | 컬렉션 생성 (JSON: name, description) |
 | `GET /api/rag/collections` | 컬렉션 목록 |
 | `DELETE /api/rag/collections/{{name}}` | 컬렉션 삭제 |
-| `POST /api/rag/upload` | 문서 업로드 (Form: file, collection) |
+| `POST /api/rag/upload` | 문서 업로드 (Form: files[], collection) 여러 파일 가능 |
 | `GET /api/rag/collections/{{name}}/files` | 파일 목록 |
 | `DELETE /api/rag/collections/{{name}}/files/{{filename}}` | 파일 삭제 |
 
@@ -582,10 +582,12 @@ curl -X POST {API_BASE_URL}/api/rag/collections \\
   -H "X-API-Key: jk-..." -H "X-Secret-Key: sk-..." \\
   -d '{{"name": "논술채점", "description": "논술 채점 가이드"}}'
 
-# 2. PDF 업로드
+# 2. 파일 업로드 (여러 파일 동시 가능)
 curl -X POST {API_BASE_URL}/api/rag/upload \\
   -H "X-API-Key: jk-..." -H "X-Secret-Key: sk-..." \\
-  -F "file=@논술채점가이드.pdf" \\
+  -F "files=@채점가이드.pdf" \\
+  -F "files=@채점기준표.jpg" \\
+  -F "files=@배점표.pdf" \\
   -F "collection=논술채점"
 
 # 3. RAG 참조하여 채팅
