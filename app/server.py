@@ -365,8 +365,9 @@ async def api_chat_upload(
     temperature: float = Form(default=0.5),
     rag_collection: str = Form(default=""),
     rag_mode: str = Form(default="full"),
+    preprocess: str = Form(default="false"),
 ):
-    """이미지를 파일로 직접 업로드하여 채팅. RAG 컬렉션 참조 가능. rag_mode: full(전체)/search(검색)"""
+    """이미지를 파일로 직접 업로드하여 채팅. preprocess=true면 손글씨 전처리 적용."""
     import base64 as b64
     from langchain_core.messages import HumanMessage as HMsg, SystemMessage as SMsg
 
@@ -400,34 +401,36 @@ async def api_chat_upload(
         rag_context = "\n\n".join(doc.page_content for doc in docs)
 
     if images:
-        from image_preprocess import preprocess_handwriting
+        do_preprocess = preprocess.lower() in ("true", "1", "yes")
 
-        # 전처리 결과 저장 디렉토리
+        # 디버그 저장 디렉토리
         debug_dir = os.path.join(os.path.dirname(__file__), "..", "data", "preprocessed_images")
         os.makedirs(debug_dir, exist_ok=True)
 
         content_blocks = []
         for img_file in images:
             img_bytes = await img_file.read()
+            ext = img_file.filename.split(".")[-1].lower() if img_file.filename else "jpeg"
 
             # 원본 저장
             orig_path = os.path.join(debug_dir, f"original_{img_file.filename}")
             with open(orig_path, "wb") as df:
                 df.write(img_bytes)
 
-            # 손글씨 이미지 전처리
-            img_bytes = preprocess_handwriting(img_bytes)
-
-            # 전처리 결과 저장
-            proc_path = os.path.join(debug_dir, f"processed_{img_file.filename}.png")
-            with open(proc_path, "wb") as df:
-                df.write(img_bytes)
-            print(f"[전처리] 저장: {proc_path}", flush=True)
+            if do_preprocess:
+                from image_preprocess import preprocess_handwriting
+                img_bytes = preprocess_handwriting(img_bytes)
+                ext = "png"
+                # 전처리 결과 저장
+                proc_path = os.path.join(debug_dir, f"processed_{img_file.filename}.png")
+                with open(proc_path, "wb") as df:
+                    df.write(img_bytes)
+                print(f"[전처리] 저장: {proc_path}", flush=True)
 
             img_b64 = b64.b64encode(img_bytes).decode()
             content_blocks.append({
                 "type": "image_url",
-                "image_url": f"data:image/png;base64,{img_b64}",
+                "image_url": f"data:image/{ext};base64,{img_b64}",
             })
         user_text = message
         if rag_context:
