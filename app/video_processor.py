@@ -238,6 +238,113 @@ def transcribe_audio(audio_path: str, model_size: str = "base", language: Option
     }
 
 
+def diarize_audio(audio_path: str, hf_token: Optional[str] = None) -> List[Dict]:
+    """
+    pyannote-audio로 화자 분리 (Speaker Diarization).
+    반환: [{"start": 0.0, "end": 3.5, "speaker": "SPEAKER_00"}, ...]
+    """
+    try:
+        from pyannote.audio import Pipeline
+    except ImportError:
+        print("[DIARIZE] pyannote.audio가 설치되지 않았습니다.", flush=True)
+        return []
+
+    token = hf_token or os.environ.get("HF_TOKEN", "")
+    if not token:
+        print("[DIARIZE] HF_TOKEN이 필요합니다. https://huggingface.co/settings/tokens 에서 발급하세요.", flush=True)
+        return []
+
+    print("[DIARIZE] 화자 분리 시작...", flush=True)
+    try:
+        pipeline = Pipeline.from_pretrained(
+            "pyannote/speaker-diarization-3.1",
+            use_auth_token=token,
+        )
+        diarization = pipeline(audio_path)
+
+        segments = []
+        for turn, _, speaker in diarization.itertracks(yield_label=True):
+            segments.append({
+                "start": round(turn.start, 2),
+                "end": round(turn.end, 2),
+                "speaker": speaker,
+            })
+        print(f"[DIARIZE] 완료: {len(segments)}개 구간, {len(set(s['speaker'] for s in segments))}명 화자", flush=True)
+        return segments
+    except Exception as e:
+        print(f"[DIARIZE] 오류: {e}", flush=True)
+        return []
+
+
+def merge_transcript_with_speakers(transcript_segments: List[Dict], diarize_segments: List[Dict]) -> List[Dict]:
+    """
+    Whisper 세그먼트에 화자 정보를 매핑.
+    각 Whisper 세그먼트의 중간 시점이 어느 화자 구간에 속하는지 판별.
+    """
+    if not diarize_segments:
+        return transcript_segments
+
+    result = []
+    for seg in transcript_segments:
+        mid = (seg["start"] + seg["end"]) / 2
+        speaker = "UNKNOWN"
+        for d in diarize_segments:
+            if d["start"] <= mid <= d["end"]:
+                speaker = d["speaker"]
+                break
+        result.append({
+            **seg,
+            "speaker": speaker,
+        })
+    return result
+
+
+def transcribe_with_diarization(
+    audio_path: str,
+    model_size: str = "base",
+    language: Optional[str] = None,
+    prompt: Optional[str] = None,
+    hf_token: Optional[str] = None,
+    speaker_names: Optional[Dict[str, str]] = None,
+) -> Dict:
+    """
+    Whisper STT + 화자 분리 통합.
+    speaker_names: {"SPEAKER_00": "김교수", "SPEAKER_01": "이학생"} 형태로 화자 이름 매핑.
+    """
+    # 1) Whisper로 자막 생성
+    transcript = transcribe_audio(audio_path, model_size, language, prompt)
+
+    # 2) 화자 분리
+    diarize_segs = diarize_audio(audio_path, hf_token)
+    if not diarize_segs:
+        return transcript
+
+    # 3) 매핑
+    merged = merge_transcript_with_speakers(transcript["segments"], diarize_segs)
+
+    # 4) 화자 이름 치환
+    if speaker_names:
+        for seg in merged:
+            if seg["speaker"] in speaker_names:
+                seg["speaker"] = speaker_names[seg["speaker"]]
+
+    # 텍스트 재구성 (화자 포함)
+    lines = []
+    current_speaker = None
+    for seg in merged:
+        if seg["speaker"] != current_speaker:
+            current_speaker = seg["speaker"]
+            lines.append(f"\n[{current_speaker}]")
+        lines.append(seg["text"])
+
+    return {
+        "text": " ".join(lines).strip(),
+        "segments": merged,
+        "language": transcript["language"],
+        "speakers": sorted(set(s["speaker"] for s in merged)),
+    }
+
+
 def frames_to_base64(frame_paths: List[str]) -> List[Dict]:
     """프레임 이미지를 base64로 변환."""
     results = []

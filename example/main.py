@@ -455,6 +455,44 @@ curl -X POST {API_BASE_URL}/api/transcribe \\
 
 ---
 
+**화자 분리 자막 (Whisper + pyannote)**
+`POST {API_BASE_URL}/api/transcribe/diarize` (multipart/form-data)
+
+| 필드 | 필수 | 설명 |
+|------|:----:|------|
+| `file` | O | 영상 또는 음성 파일 |
+| `hf_token` | O | HuggingFace 토큰 (pyannote 모델 접근용) |
+| `whisper_model` | - | tiny, base(기본), small, medium, large |
+| `format` | - | json(기본), srt, text |
+| `language` | - | ko, en, 빈값=자동감지 |
+| `prompt` | - | Whisper 힌트 |
+| `speaker_names` | - | 화자 이름 매핑 JSON |
+
+```bash
+# 화자 분리 자막 생성
+curl -X POST {API_BASE_URL}/api/transcribe/diarize \\
+  -H "X-API-Key: jk-..." -H "X-Secret-Key: sk-..." \\
+  -F "file=@강의.mp4" \\
+  -F "format=srt" \\
+  -F "language=ko" \\
+  -F "hf_token=hf_..." \\
+  -F 'speaker_names={{"SPEAKER_00": "김교수", "SPEAKER_01": "이학생"}}' \\
+  --max-time 1800 -o result.srt
+```
+
+SRT 결과 예시:
+```
+1
+00:00:00,000 --> 00:00:03,500
+[김교수] 오늘은 미분방정식에 대해 알아보겠습니다.
+
+2
+00:00:03,500 --> 00:00:07,200
+[이학생] 교수님, 질문이 있습니다.
+```
+
+---
+
 **동영상 분석 (Whisper + Gemma 4)**
 `POST {API_BASE_URL}/api/video` (multipart/form-data)
 

@@ -483,6 +483,98 @@ async def api_transcribe(
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+# --- 화자 분리 자막 API ---
+@app.post("/api/transcribe/diarize")
+async def api_transcribe_diarize(
+    file: UploadFile = File(...),
+    whisper_model: str = Form(default="base"),
+    format: str = Form(default="json"),
+    language: str = Form(default=""),
+    prompt: str = Form(default=""),
+    hf_token: str = Form(default=""),
+    speaker_names: str = Form(default=""),
+):
+    """
+    화자 분리 + 자막 생성.
+
+    - hf_token: HuggingFace 토큰 (pyannote 모델 접근용)
+    - speaker_names: 화자 이름 매핑 JSON (예: {"SPEAKER_00": "김교수", "SPEAKER_01": "이학생"})
+    """
+    import asyncio
+    import json as jsonlib
+    from concurrent.futures import ThreadPoolExecutor
+
+    SUPPORTED_VIDEO = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
+    SUPPORTED_AUDIO = {".mp3", ".wav", ".m4a", ".ogg", ".flac"}
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in SUPPORTED_VIDEO | SUPPORTED_AUDIO:
+        raise HTTPException(400, f"지원하지 않는 파일 형식: {ext}")
+
+    # speaker_names JSON 파싱
+    names_map = None
+    if speaker_names:
+        try:
+            names_map = jsonlib.loads(speaker_names)
+        except jsonlib.JSONDecodeError:
+            raise HTTPException(400, "speaker_names는 유효한 JSON이어야 합니다.")
+
+    tmp_dir = tempfile.mkdtemp()
+    file_path = os.path.join(tmp_dir, file.filename)
+    try:
+        with open(file_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+
+        audio_path = file_path
+        if ext in SUPPORTED_VIDEO:
+            audio_path = os.path.join(tmp_dir, "audio.wav")
+            if not video_processor.extract_audio(file_path, audio_path):
+                raise HTTPException(500, "음성 추출에 실패했습니다.")
+
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            ThreadPoolExecutor(max_workers=1),
+            lambda: video_processor.transcribe_with_diarization(
+                audio_path,
+                model_size=whisper_model,
+                language=language or None,
+                prompt=prompt or None,
+                hf_token=hf_token or None,
+                speaker_names=names_map,
+            ),
+        )
+
+        if format == "text":
+            from starlette.responses import PlainTextResponse
+            return PlainTextResponse(result["text"], media_type="text/plain; charset=utf-8")
+
+        if format == "srt":
+            from starlette.responses import PlainTextResponse
+            srt_lines = []
+            for i, seg in enumerate(result["segments"], 1):
+                start = _format_timestamp_srt(seg["start"])
+                end = _format_timestamp_srt(seg["end"])
+                speaker = seg.get("speaker", "")
+                prefix = f"[{speaker}] " if speaker and speaker != "UNKNOWN" else ""
+                srt_lines.append(f"{i}\n{start} --> {end}\n{prefix}{seg['text'].strip()}")
+            srt_content = "\n\n".join(srt_lines) + "\n"
+            return PlainTextResponse(
+                srt_content,
+                media_type="text/plain; charset=utf-8",
+                headers={"Content-Disposition": "attachment; filename=subtitle_diarized.srt"},
+            )
+
+        return {
+            "text": result["text"],
+            "segments": result["segments"],
+            "language": result["language"],
+            "speakers": result.get("speakers", []),
+        }
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 def _format_timestamp_srt(seconds: float) -> str:
     h = int(seconds // 3600)
     m = int((seconds % 3600) // 60)
