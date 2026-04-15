@@ -347,6 +347,7 @@ with st.sidebar:
         except requests.ConnectionError:
             st.error("서버에 연결할 수 없습니다.")
 
+    with st.expander("API 사용 가이드"):
         st.caption("**API 사용 가이드**")
         st.markdown(f"""
 **Endpoint**
