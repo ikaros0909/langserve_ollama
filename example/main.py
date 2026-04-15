@@ -401,12 +401,27 @@ curl -X POST {API_BASE_URL}/api/chat \\
 ```
 
 **curl 예시 - 이미지 분석 (gemma4 전용)**
+
+이미지를 base64로 변환 후 `images` 배열에 넣어 전송:
 ```bash
+# 이미지를 base64로 변환하여 전송
+IMG_B64=$(base64 -w 0 사진.jpg)
 curl -X POST {API_BASE_URL}/api/chat \\
   -H "Content-Type: application/json" \\
   -H "X-API-Key: jk-..." \\
   -H "X-Secret-Key: sk-..." \\
-  -d '{{"message": "이 이미지를 설명해줘", "model": "gemma4:26b", "images": ["<base64>"]}}'
+  -d '{{"message": "이 이미지를 설명해줘", "model": "gemma4:26b", "images": ["'$IMG_B64'"]}}'
+```
+
+여러 이미지 동시 분석:
+```bash
+IMG1=$(base64 -w 0 사진1.jpg)
+IMG2=$(base64 -w 0 사진2.jpg)
+curl -X POST {API_BASE_URL}/api/chat \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: jk-..." \\
+  -H "X-Secret-Key: sk-..." \\
+  -d '{{"message": "두 이미지를 비교해줘", "model": "gemma4:26b", "images": ["'$IMG1'", "'$IMG2'"]}}'
 ```
 
 **응답 형식**
