@@ -76,7 +76,7 @@ def _extract_text_from_image(file_path: str) -> str:
 
         import signal
 
-        llm = ChatOllama(model="gemma4:26b", temperature=0, timeout=180)
+        llm = ChatOllama(model="gemma4:26b", temperature=0, timeout=600)
         print(f"[RAG] Gemma 4 텍스트 추출 요청 중: {os.path.basename(file_path)}", flush=True)
 
         result = llm.invoke([
