@@ -74,7 +74,11 @@ def _extract_text_from_image(file_path: str) -> str:
         processed_bytes = preprocess_handwriting(raw_bytes)
         img_b64 = base64.b64encode(processed_bytes).decode()
 
-        llm = ChatOllama(model="gemma4:26b", temperature=0)
+        import signal
+
+        llm = ChatOllama(model="gemma4:26b", temperature=0, timeout=180)
+        print(f"[RAG] Gemma 4 텍스트 추출 요청 중: {os.path.basename(file_path)}", flush=True)
+
         result = llm.invoke([
             SystemMessage(content="이미지의 모든 텍스트와 내용을 정확하게 추출하여 한국어로 정리해주세요. 손글씨도 최대한 정확히 읽어주세요. 표가 있으면 표 형식을 유지하세요."),
             HumanMessage(content=[
@@ -83,10 +87,10 @@ def _extract_text_from_image(file_path: str) -> str:
             ]),
         ])
         text = result.content if hasattr(result, "content") else str(result)
-        print(f"[RAG] 이미지 텍스트 추출 완료: {len(text)}자", flush=True)
+        print(f"[RAG] 이미지 텍스트 추출 완료: {os.path.basename(file_path)} → {len(text)}자", flush=True)
         return text
     except Exception as e:
-        print(f"[RAG] 이미지 텍스트 추출 실패: {e}", flush=True)
+        print(f"[RAG] 이미지 텍스트 추출 실패: {os.path.basename(file_path)} → {e}", flush=True)
         return ""
 
 

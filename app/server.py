@@ -491,7 +491,9 @@ async def upload_rag_file(
     tmp_dir = tempfile.mkdtemp()
     results = []
     try:
-        for file in files:
+        total = len(files)
+        for idx, file in enumerate(files, 1):
+            print(f"[RAG Upload] {idx}/{total} 처리 중: {file.filename}", flush=True)
             file_path = os.path.join(tmp_dir, file.filename)
             with open(file_path, "wb") as f:
                 content = await file.read()
@@ -503,6 +505,7 @@ async def upload_rag_file(
                 lambda fp=file_path, fn=file.filename: rag_collections.add_file_to_collection(collection, fp, fn),
             )
             results.append(result)
+            print(f"[RAG Upload] {idx}/{total} 완료: {file.filename}", flush=True)
 
         errors = [r for r in results if "error" in r]
         if errors:
