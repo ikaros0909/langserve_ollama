@@ -636,6 +636,11 @@ curl -X POST {API_BASE_URL}/api/chat-upload \\
 [{{"name": "모집요강", "description": "수험생 상담용", "file_count": 1}}, {{"name": "논술채점", "description": "논술 채점 가이드", "file_count": 3}}]
 ```
 
+`GET /api/rag/collections/논술채점/files` 응답:
+```json
+{{"collection": "논술채점", "files": ["채점가이드.pdf", "기준표.jpg", "배점표.pdf"]}}
+```
+
 `POST /api/transcribe` 응답 (format=json):
 ```json
 {{"text": "오늘 강의에서는 미분방정식을...", "segments": [{{"start": 0.0, "end": 3.5, "text": "오늘 강의에서는"}}, {{"start": 3.5, "end": 7.2, "text": "미분방정식을..."}}], "language": "ko"}}
