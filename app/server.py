@@ -26,6 +26,20 @@ import video_processor
 app = FastAPI()
 
 
+# 422 에러 상세 로깅
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse as JSONResp
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    print(f"[422] {request.method} {request.url.path}", flush=True)
+    print(f"[422] Content-Type: {request.headers.get('content-type', '없음')}", flush=True)
+    print(f"[422] 상세: {exc.errors()}", flush=True)
+    return JSONResp(status_code=422, content={"detail": exc.errors()})
+
+
+
 # --- API 인증 미들웨어 ---
 import logging
 logger = logging.getLogger("api_auth")
@@ -299,6 +313,69 @@ async def api_chat(req: ChatRequest):
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 total_tokens=input_tokens + output_tokens,
+            )
+
+    return ChatResponse(answer=answer, model=model_name, usage=usage)
+
+
+# --- 이미지 파일 업로드 채팅 API ---
+@app.post("/api/chat/upload", response_model=ChatResponse)
+async def api_chat_upload(
+    message: str = Form(...),
+    images: List[UploadFile] = File(default=[]),
+    model: str = Form(default=""),
+    system_prompt: str = Form(default=""),
+    temperature: float = Form(default=0.5),
+):
+    """이미지를 파일로 직접 업로드하여 채팅. base64 변환 불필요."""
+    import base64 as b64
+    from langchain_core.messages import HumanMessage as HMsg, SystemMessage as SMsg
+
+    model_name = model or DEFAULT_MODEL
+    if model_name not in AVAILABLE_MODELS:
+        raise HTTPException(400, f"지원하지 않는 모델: {model_name}")
+
+    if images and not AVAILABLE_MODELS[model_name]["multimodal"]:
+        raise HTTPException(
+            400,
+            f"'{model_name}'은 이미지를 지원하지 않습니다. "
+            f"멀티모달 모델: {[k for k, v in AVAILABLE_MODELS.items() if v['multimodal']]}",
+        )
+
+    system = system_prompt or "You are a helpful AI assistant. Answer in Korean."
+    llm = ChatOllama(model=model_name, temperature=temperature)
+
+    if images:
+        content_blocks = []
+        for img_file in images:
+            img_bytes = await img_file.read()
+            img_b64 = b64.b64encode(img_bytes).decode()
+            ext = img_file.filename.split(".")[-1].lower() if img_file.filename else "jpeg"
+            content_blocks.append({
+                "type": "image_url",
+                "image_url": f"data:image/{ext};base64,{img_b64}",
+            })
+        content_blocks.append({"type": "text", "text": message})
+
+        messages = [SMsg(content=system), HMsg(content=content_blocks)]
+        result = llm.invoke(messages)
+    else:
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", system),
+            ("human", "{input}"),
+        ])
+        result = (prompt | llm).invoke({"input": message})
+
+    answer = result.content if hasattr(result, "content") else str(result)
+
+    usage = None
+    if hasattr(result, "response_metadata"):
+        meta = result.response_metadata
+        if "prompt_eval_count" in meta or "eval_count" in meta:
+            usage = UsageInfo(
+                input_tokens=meta.get("prompt_eval_count", 0),
+                output_tokens=meta.get("eval_count", 0),
+                total_tokens=meta.get("prompt_eval_count", 0) + meta.get("eval_count", 0),
             )
 
     return ChatResponse(answer=answer, model=model_name, usage=usage)

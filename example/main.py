@@ -400,28 +400,25 @@ curl -X POST {API_BASE_URL}/api/chat \\
   -d '{{"message": "장학금 종류 알려줘", "system_prompt": "당신은 입학처 상담원입니다.", "model": "gemma4:26b", "temperature": 0.3}}'
 ```
 
-**curl 예시 - 이미지 분석 (gemma4 전용)**
-
-이미지를 base64로 변환 후 `images` 배열에 넣어 전송:
+**curl 예시 - 이미지 분석 (gemma4 전용, 파일 직접 업로드)**
+`POST {API_BASE_URL}/api/chat/upload` (multipart/form-data)
 ```bash
-# 이미지를 base64로 변환하여 전송
-IMG_B64=$(base64 -w 0 사진.jpg)
-curl -X POST {API_BASE_URL}/api/chat \\
-  -H "Content-Type: application/json" \\
-  -H "X-API-Key: jk-..." \\
-  -H "X-Secret-Key: sk-..." \\
-  -d '{{"message": "이 이미지를 설명해줘", "model": "gemma4:26b", "images": ["'$IMG_B64'"]}}'
+# 이미지 1장 분석
+curl -X POST {API_BASE_URL}/api/chat/upload \\
+  -H "X-API-Key: jk-..." -H "X-Secret-Key: sk-..." \\
+  -F "message=이 이미지를 설명해줘" \\
+  -F "model=gemma4:26b" \\
+  -F "images=@사진.jpg"
 ```
 
-여러 이미지 동시 분석:
 ```bash
-IMG1=$(base64 -w 0 사진1.jpg)
-IMG2=$(base64 -w 0 사진2.jpg)
-curl -X POST {API_BASE_URL}/api/chat \\
-  -H "Content-Type: application/json" \\
-  -H "X-API-Key: jk-..." \\
-  -H "X-Secret-Key: sk-..." \\
-  -d '{{"message": "두 이미지를 비교해줘", "model": "gemma4:26b", "images": ["'$IMG1'", "'$IMG2'"]}}'
+# 여러 이미지 동시 분석
+curl -X POST {API_BASE_URL}/api/chat/upload \\
+  -H "X-API-Key: jk-..." -H "X-Secret-Key: sk-..." \\
+  -F "message=두 이미지를 비교해줘" \\
+  -F "model=gemma4:26b" \\
+  -F "images=@사진1.jpg" \\
+  -F "images=@사진2.jpg"
 ```
 
 **응답 형식**
