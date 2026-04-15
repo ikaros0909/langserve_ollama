@@ -214,11 +214,13 @@ def add_file_to_collection(name: str, file_path: str, filename: str) -> Dict:
 
     col_dir = os.path.join(BASE_DIR, name)
 
-    # 같은 파일명이 이미 있으면 삭제 후 재등록 (중복 방지)
+    # 같은 파일명이 이미 있으면 파일만 교체 (인덱스 재구축 안 함, 중복 허용)
     if filename in meta[name]["files"]:
-        print(f"[RAG] 기존 파일 교체: {filename} → 컬렉션 '{name}'", flush=True)
-        delete_file_from_collection(name, filename)
-        meta = _load_metadata()  # 메타 다시 로드
+        print(f"[RAG] 기존 파일 교체: {filename} → 컬렉션 '{name}' (파일만 교체, 기존 청크 유지)", flush=True)
+        # 기존 파일만 삭제 (FAISS 재구축 안 함)
+        old_path = os.path.join(col_dir, "files", filename)
+        if os.path.exists(old_path):
+            os.remove(old_path)
 
     # 파일 복사
     dest_path = os.path.join(col_dir, "files", filename)
