@@ -507,7 +507,8 @@ async def list_rag_files(name: str):
 
 @app.post("/api/rag/upload")
 async def upload_rag_file(
-    files: List[UploadFile] = File(...),
+    files: List[UploadFile] = File(default=[]),
+    file: Optional[UploadFile] = File(default=None),
     collection: str = Form(default="default"),
     description: str = Form(default=""),
 ):
@@ -518,6 +519,13 @@ async def upload_rag_file(
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
 
+    # file(단수)과 files(복수) 모두 지원
+    all_files = list(files) if files else []
+    if file:
+        all_files.append(file)
+    if not all_files:
+        raise HTTPException(400, "파일을 첨부해주세요. (필드명: files 또는 file)")
+
     # 컬렉션 자동 생성
     existing = [c["name"] for c in rag_collections.list_collections()]
     if collection not in existing:
@@ -526,8 +534,9 @@ async def upload_rag_file(
     tmp_dir = tempfile.mkdtemp()
     results = []
     try:
-        total = len(files)
-        for idx, file in enumerate(files, 1):
+        total = len(all_files)
+        print(f"[RAG Upload] 수신 파일 수: {total}개 → {[f.filename for f in all_files]}", flush=True)
+        for idx, file in enumerate(all_files, 1):
             print(f"[RAG Upload] {idx}/{total} 처리 중: {file.filename}", flush=True)
             file_path = os.path.join(tmp_dir, file.filename)
             with open(file_path, "wb") as f:
