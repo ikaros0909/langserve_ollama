@@ -211,11 +211,12 @@ from langchain_ollama import ChatOllama
 # 사용 가능한 모델
 GUI_MODELS = {
     "exaone3.5:32b": "EXAONE 3.5 32B (기본)",
+    "EXAONE-4.5-33B:latest": "EXAONE 4.5 33B [Q4 양자화] 멀티모달",
     "huihui_ai/kanana-nano-abliterated": "Kanana Nano (Kakao)",
     "gemma4:31b": "Gemma 4 31B Dense (Google)",
     "gemma4:26b": "Gemma 4 26B MoE (Google)",
 }
-MULTIMODAL_MODELS = {"gemma4:26b", "gemma4:31b"}
+MULTIMODAL_MODELS = {"gemma4:26b", "gemma4:31b", "EXAONE-4.5-33B:latest"}
 
 with st.sidebar:
     st.markdown("**모델 선택**")
@@ -412,6 +413,7 @@ with st.sidebar:
 | model | 멀티모달 | 설명 |
 |-------|:--------:|------|
 | `exaone3.5:32b` | - | LG AI 한국어 32B (기본) |
+| `EXAONE-4.5-33B:latest` | O | LG AI 최신 33B 멀티모달 [Q4 양자화] |
 | `huihui_ai/kanana-nano-abliterated` | - | Kakao 이중언어 |
 | `gemma4:31b` | O | Google Dense 32B 멀티모달 |
 | `gemma4:26b` | O | Google MoE 26B 멀티모달 |

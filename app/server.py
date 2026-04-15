@@ -213,6 +213,11 @@ AVAILABLE_MODELS = {
         "description": "Kakao 한국어/영어 이중언어 모델",
         "multimodal": False,
     },
+    "EXAONE-4.5-33B:latest": {
+        "name": "EXAONE 4.5 33B (Q4 양자화)",
+        "description": "LG AI 최신 멀티모달 모델 (Q4_K_M 양자화)",
+        "multimodal": True,
+    },
     "gemma4:31b": {
         "name": "Gemma 4 31B Dense",
         "description": "Google Dense 모델 (32B, 멀티모달)",

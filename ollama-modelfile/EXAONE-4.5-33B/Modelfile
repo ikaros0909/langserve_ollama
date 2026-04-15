@@ -1,0 +1,20 @@
+FROM /home/jinhakdl2/chatbot/langserve_ollama/gguf/EXAONE-4.5-33B-Q4_K_M.gguf
+
+ADAPTER /home/jinhakdl2/chatbot/langserve_ollama/gguf/mmproj-EXAONE-4.5-33B-BF16.gguf
+
+TEMPLATE """{{- if .System }}<|system|>
+{{ .System }}
+<|end|>
+{{- end }}
+<|user|>
+{{ .Prompt }}
+<|end|>
+<|assistant|>
+{{ .Response }}
+<|end|>
+"""
+
+PARAMETER stop <|end|>
+PARAMETER stop <|endofturn|>
+PARAMETER temperature 0.5
+PARAMETER num_ctx 4096
