@@ -303,6 +303,36 @@ with st.sidebar:
             del st.session_state["confirm_delete"]
             st.rerun()
 
+    # --- RAG 컬렉션 목록 ---
+    st.markdown("---")
+    with st.expander("RAG 컬렉션 관리"):
+        try:
+            resp = requests.get(f"{API_BASE_URL}/api/rag/collections")
+            if resp.status_code == 200:
+                collections = resp.json()
+                if not collections:
+                    st.info("등록된 RAG 컬렉션이 없습니다.")
+                for col in collections:
+                    st.markdown(f"**{col['name']}** — {col['description'] or '설명 없음'} ({col['file_count']}개 파일)")
+                    # 파일 목록
+                    try:
+                        files_resp = requests.get(f"{API_BASE_URL}/api/rag/collections/{col['name']}/files")
+                        if files_resp.status_code == 200:
+                            files = files_resp.json().get("files", [])
+                            for fname in files:
+                                fc1, fc2 = st.columns([4, 1])
+                                fc1.caption(f"  {fname}")
+                                if fc2.button("x", key=f"rag_del_{col['name']}_{fname}"):
+                                    requests.delete(f"{API_BASE_URL}/api/rag/collections/{col['name']}/files/{fname}")
+                                    st.rerun()
+                    except requests.ConnectionError:
+                        pass
+                    if st.button(f"컬렉션 삭제", key=f"rag_col_del_{col['name']}"):
+                        requests.delete(f"{API_BASE_URL}/api/rag/collections/{col['name']}")
+                        st.rerun()
+        except requests.ConnectionError:
+            st.error("서버에 연결할 수 없습니다.")
+
     # --- API 키 관리 (사이드바 하단) ---
     st.markdown("---")
     with st.expander("API 키 관리"):
