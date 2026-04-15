@@ -215,8 +215,9 @@ GUI_MODELS = {
     "huihui_ai/kanana-nano-abliterated": "Kanana Nano (Kakao)",
     "gemma4:31b": "Gemma 4 31B Dense (Google)",
     "gemma4:26b": "Gemma 4 26B MoE (Google)",
+    "MedAIBase/PaddleOCR-VL:0.9b": "PaddleOCR-VL 0.9B (OCR 특화)",
 }
-MULTIMODAL_MODELS = {"gemma4:26b", "gemma4:31b", "EXAONE-4.5-33B:latest"}
+MULTIMODAL_MODELS = {"gemma4:26b", "gemma4:31b", "EXAONE-4.5-33B:latest", "MedAIBase/PaddleOCR-VL:0.9b"}
 
 with st.sidebar:
     st.markdown("**모델 선택**")
@@ -417,6 +418,7 @@ with st.sidebar:
 | `huihui_ai/kanana-nano-abliterated` | - | Kakao 이중언어 |
 | `gemma4:31b` | O | Google Dense 32B 멀티모달 |
 | `gemma4:26b` | O | Google MoE 26B 멀티모달 |
+| `MedAIBase/PaddleOCR-VL:0.9b` | O | OCR 특화 0.9B (문서/표/손글씨) |
 
 **curl 예시 - 기본**
 ```bash

@@ -228,6 +228,11 @@ AVAILABLE_MODELS = {
         "description": "Google MoE 모델 (4B active, 256K context, 멀티모달)",
         "multimodal": True,
     },
+    "MedAIBase/PaddleOCR-VL:0.9b": {
+        "name": "PaddleOCR-VL 0.9B",
+        "description": "OCR 특화 멀티모달 (109개 언어, 문서/표/손글씨 인식)",
+        "multimodal": True,
+    },
 }
 
 DEFAULT_MODEL = "exaone3.5:32b"
