@@ -361,16 +361,19 @@ with st.sidebar:
 | `model` | - | 모델 선택 (기본: exaone3.5:32b) |
 | `temperature` | - | 창의성 0~1 (기본: 0.5) |
 | `images` | - | base64 이미지 배열 (gemma4만) |
+| `rag_collection` | - | 참조할 RAG 컬렉션 이름 |
 
 **`message` vs `system_prompt`**
 - `system_prompt`: AI의 역할과 행동 규칙을 지시 (시스템 프롬프트)
 - `message`: 실제 사용자 질문 (사용자 프롬프트)
+- `rag_collection`: 지정하면 해당 컬렉션 문서를 검색하여 답변에 활용
         """)
         st.code('''{
   "system_prompt": "당신은 연세대 입학처 AI 상담원입니다. 모집요강 기반으로만 답변하세요.",
   "message": "수시 추천형 지원 자격이 뭐야?",
   "model": "exaone3.5:32b",
-  "temperature": 0.5
+  "temperature": 0.5,
+  "rag_collection": "모집요강"
 }''', language="json")
         st.markdown(f"""
 **모델 목록**
@@ -525,6 +528,56 @@ curl -X POST {API_BASE_URL}/api/video \\
   -F "language=ko" \\
   --max-time 1800
 ```
+
+---
+
+---
+
+**RAG 컬렉션 관리**
+
+| API | 설명 |
+|-----|------|
+| `POST /api/rag/collections` | 컬렉션 생성 (JSON: name, description) |
+| `GET /api/rag/collections` | 컬렉션 목록 |
+| `DELETE /api/rag/collections/{{name}}` | 컬렉션 삭제 |
+| `POST /api/rag/upload` | 문서 업로드 (Form: file, collection) |
+| `GET /api/rag/collections/{{name}}/files` | 파일 목록 |
+| `DELETE /api/rag/collections/{{name}}/files/{{filename}}` | 파일 삭제 |
+
+```bash
+# 1. 컬렉션 생성 (자동 생성도 가능)
+curl -X POST {API_BASE_URL}/api/rag/collections \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: jk-..." -H "X-Secret-Key: sk-..." \\
+  -d '{{"name": "논술채점", "description": "논술 채점 가이드"}}'
+
+# 2. PDF 업로드
+curl -X POST {API_BASE_URL}/api/rag/upload \\
+  -H "X-API-Key: jk-..." -H "X-Secret-Key: sk-..." \\
+  -F "file=@논술채점가이드.pdf" \\
+  -F "collection=논술채점"
+
+# 3. RAG 참조하여 채팅
+curl -X POST {API_BASE_URL}/api/chat \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: jk-..." -H "X-Secret-Key: sk-..." \\
+  -d '{{"message": "이 답안을 채점해줘", "rag_collection": "논술채점", "model": "exaone3.5:32b"}}'
+
+# 4. 이미지(답안지) + RAG(채점가이드) 함께 사용
+curl -X POST {API_BASE_URL}/api/chat-upload \\
+  -H "X-API-Key: jk-..." -H "X-Secret-Key: sk-..." \\
+  -F "message=이 논술 답안지를 채점가이드에 따라 채점해줘" \\
+  -F "model=gemma4:26b" \\
+  -F "rag_collection=논술채점" \\
+  -F "images=@답안지.jpg"
+```
+
+**활용 시나리오**
+
+| 컬렉션 | 용도 | 사용 예 |
+|--------|------|---------|
+| `모집요강` | 수험생 상담 | `"rag_collection": "모집요강"` |
+| `논술채점` | 논술 답안 채점 | 이미지(답안지) + RAG(채점가이드) |
 
 ---
 

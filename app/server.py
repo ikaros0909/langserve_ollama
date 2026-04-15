@@ -21,6 +21,7 @@ from llm import llm as model
 # from xionic import chain as xionic_chain
 import api_keys
 import video_processor
+import rag_collections
 
 
 app = FastAPI()
@@ -235,6 +236,7 @@ class ChatRequest(BaseModel):
     system_prompt: Optional[str] = None
     temperature: Optional[float] = None
     images: Optional[List[str]] = None  # base64 인코딩 이미지 리스트
+    rag_collection: Optional[str] = None  # RAG 컬렉션 이름
 
 
 class UsageInfo(BaseModel):
@@ -276,21 +278,42 @@ async def api_chat(req: ChatRequest):
 
     llm = ChatOllama(model=model_name, temperature=temp)
 
+    # RAG 컬렉션 참조
+    rag_context = ""
+    if req.rag_collection:
+        retriever = rag_collections.get_retriever(req.rag_collection)
+        if not retriever:
+            raise HTTPException(400, f"RAG 컬렉션 '{req.rag_collection}'을 찾을 수 없거나 비어있습니다.")
+        docs = retriever.invoke(req.message)
+        rag_context = "\n\n".join(doc.page_content for doc in docs)
+
     if req.images:
-        # 멀티모달: 이미지 + 텍스트를 HumanMessage content 블록으로 구성
+        # 멀티모달: 이미지 + 텍스트 + RAG 컨텍스트
         content_blocks = []
         for img_b64 in req.images:
             content_blocks.append({
                 "type": "image_url",
                 "image_url": f"data:image/jpeg;base64,{img_b64}",
             })
-        content_blocks.append({"type": "text", "text": req.message})
+        user_text = req.message
+        if rag_context:
+            user_text = f"[참고 문서]\n{rag_context}\n\n[질문]\n{req.message}"
+        content_blocks.append({"type": "text", "text": user_text})
 
         messages = [
             SMsg(content=system),
             HMsg(content=content_blocks),
         ]
         result = llm.invoke(messages)
+    elif rag_context:
+        # RAG 모드: 컨���스트 + 질문
+        from langchain_core.output_parsers import StrOutputParser as SOP
+        rag_prompt = ChatPromptTemplate.from_messages([
+            ("system", system),
+            ("human", "[참고 문서]\n{context}\n\n[질문]\n{input}"),
+        ])
+        chain_api = rag_prompt | llm
+        result = chain_api.invoke({"context": rag_context, "input": req.message})
     else:
         # 텍스트 전용
         prompt = ChatPromptTemplate.from_messages([
@@ -326,8 +349,9 @@ async def api_chat_upload(
     model: str = Form(default=""),
     system_prompt: str = Form(default=""),
     temperature: float = Form(default=0.5),
+    rag_collection: str = Form(default=""),
 ):
-    """이미지를 파일로 직접 업로드하여 채팅. base64 변환 불필요."""
+    """이미지를 파일로 직접 업로드하여 채팅. RAG 컬렉션 참조 가능."""
     import base64 as b64
     from langchain_core.messages import HumanMessage as HMsg, SystemMessage as SMsg
 
@@ -345,6 +369,15 @@ async def api_chat_upload(
     system = system_prompt or "You are a helpful AI assistant. Answer in Korean."
     llm = ChatOllama(model=model_name, temperature=temperature)
 
+    # RAG 컬렉션 참조
+    rag_context = ""
+    if rag_collection:
+        retriever = rag_collections.get_retriever(rag_collection)
+        if not retriever:
+            raise HTTPException(400, f"RAG 컬렉션 '{rag_collection}'을 찾을 수 없거나 비어있습니다.")
+        docs = retriever.invoke(message)
+        rag_context = "\n\n".join(doc.page_content for doc in docs)
+
     if images:
         content_blocks = []
         for img_file in images:
@@ -355,10 +388,19 @@ async def api_chat_upload(
                 "type": "image_url",
                 "image_url": f"data:image/{ext};base64,{img_b64}",
             })
-        content_blocks.append({"type": "text", "text": message})
+        user_text = message
+        if rag_context:
+            user_text = f"[참고 문서]\n{rag_context}\n\n[질문]\n{message}"
+        content_blocks.append({"type": "text", "text": user_text})
 
         messages = [SMsg(content=system), HMsg(content=content_blocks)]
         result = llm.invoke(messages)
+    elif rag_context:
+        rag_prompt = ChatPromptTemplate.from_messages([
+            ("system", system),
+            ("human", "[참고 문서]\n{context}\n\n[질문]\n{input}"),
+        ])
+        result = (rag_prompt | llm).invoke({"context": rag_context, "input": message})
     else:
         prompt = ChatPromptTemplate.from_messages([
             ("system", system),
@@ -379,6 +421,89 @@ async def api_chat_upload(
             )
 
     return ChatResponse(answer=answer, model=model_name, usage=usage)
+
+
+# ============================================================
+# RAG 컬렉션 관리 API
+# ============================================================
+
+class CollectionCreateRequest(BaseModel):
+    name: str
+    description: str = ""
+
+
+@app.post("/api/rag/collections")
+async def create_rag_collection(req: CollectionCreateRequest):
+    """RAG 컬렉션 생성."""
+    result = rag_collections.create_collection(req.name, req.description)
+    if "error" in result:
+        raise HTTPException(400, result["error"])
+    return result
+
+
+@app.get("/api/rag/collections")
+async def list_rag_collections():
+    """RAG 컬렉션 목록."""
+    return rag_collections.list_collections()
+
+
+@app.delete("/api/rag/collections/{name}")
+async def delete_rag_collection(name: str):
+    if rag_collections.delete_collection(name):
+        return {"message": f"컬렉션 '{name}' 삭제됨"}
+    raise HTTPException(404, "컬렉션을 찾을 수 없습니다.")
+
+
+@app.get("/api/rag/collections/{name}/files")
+async def list_rag_files(name: str):
+    """컬렉션의 파일 목록."""
+    files = rag_collections.list_files_in_collection(name)
+    return {"collection": name, "files": files}
+
+
+@app.post("/api/rag/upload")
+async def upload_rag_file(
+    file: UploadFile = File(...),
+    collection: str = Form(...),
+    description: str = Form(default=""),
+):
+    """
+    PDF/문서를 지정한 RAG 컬렉션에 업로드.
+    컬렉션이 없으면 자동 생성.
+    """
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    # 컬렉션 자동 생성
+    existing = [c["name"] for c in rag_collections.list_collections()]
+    if collection not in existing:
+        rag_collections.create_collection(collection, description)
+
+    tmp_dir = tempfile.mkdtemp()
+    file_path = os.path.join(tmp_dir, file.filename)
+    try:
+        with open(file_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            ThreadPoolExecutor(max_workers=1),
+            lambda: rag_collections.add_file_to_collection(collection, file_path, file.filename),
+        )
+        if "error" in result:
+            raise HTTPException(400, result["error"])
+        return result
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+@app.delete("/api/rag/collections/{name}/files/{filename}")
+async def delete_rag_file(name: str, filename: str):
+    """컬렉션에서 파일 삭제."""
+    if rag_collections.delete_file_from_collection(name, filename):
+        return {"message": f"'{filename}' 삭제됨"}
+    raise HTTPException(404, "파일을 찾을 수 없습니다.")
 
 
 # --- 모델 목록 ---
