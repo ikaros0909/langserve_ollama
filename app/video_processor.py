@@ -174,19 +174,20 @@ def transcribe_audio(audio_path: str, model_size: str = "base", language: Option
     total_chunks = int(duration // chunk_seconds) + (1 if duration % chunk_seconds > 0 else 0)
     all_text = []
     all_segments = []
-    time_offset = 0.0
 
     with tempfile.TemporaryDirectory() as chunk_dir:
         for chunk_idx in range(total_chunks):
-            start = chunk_idx * chunk_seconds
+            # 원본 영상 기준 정확한 시작 시간 (고정 오프셋)
+            chunk_start = chunk_idx * chunk_seconds
             chunk_path = os.path.join(chunk_dir, f"chunk_{chunk_idx:03d}.wav")
 
-            # ffmpeg로 청크 추출
+            # ffmpeg: -ss를 -i 앞에 배치 → 정확한 프레임 탐색
             try:
                 subprocess.run(
                     [
-                        "ffmpeg", "-i", audio_path,
-                        "-ss", str(start),
+                        "ffmpeg",
+                        "-ss", str(chunk_start),
+                        "-i", audio_path,
                         "-t", str(chunk_seconds),
                         "-acodec", "pcm_s16le",
                         "-ar", "16000",
@@ -206,8 +207,8 @@ def transcribe_audio(audio_path: str, model_size: str = "base", language: Option
                 continue
 
             chunk_duration = get_audio_duration(chunk_path)
-            end_time = start + chunk_duration
-            print(f"[STT] 청크 {chunk_idx+1}/{total_chunks} 처리 중: {start/60:.1f}분 ~ {end_time/60:.1f}분", flush=True)
+            end_time = chunk_start + chunk_duration
+            print(f"[STT] 청크 {chunk_idx+1}/{total_chunks} 처리 중: {chunk_start/60:.1f}분 ~ {end_time/60:.1f}분", flush=True)
 
             try:
                 result = _transcribe_single(model, chunk_path, language)
@@ -215,16 +216,15 @@ def transcribe_audio(audio_path: str, model_size: str = "base", language: Option
                 chunk_segs = result["segments"]
                 all_text.append(chunk_text)
                 for seg in chunk_segs:
+                    # 원본 기준 고정 오프셋으로 타임스탬프 계산
                     all_segments.append({
-                        "start": round(seg["start"] + time_offset, 2),
-                        "end": round(seg["end"] + time_offset, 2),
+                        "start": round(seg["start"] + chunk_start, 2),
+                        "end": round(seg["end"] + chunk_start, 2),
                         "text": seg["text"],
                     })
                 print(f"[STT] 청크 {chunk_idx+1}/{total_chunks} 완료: {len(chunk_segs)}개 세그먼트, {len(chunk_text)}자", flush=True)
             except Exception as e:
                 print(f"[STT] 청크 {chunk_idx+1}/{total_chunks} Whisper 실패: {e}", flush=True)
-
-            time_offset += chunk_duration
 
     full_text = " ".join(all_text)
     print(f"[STT] 전체 완료: {len(all_segments)}개 세그먼트, {len(full_text)}자", flush=True)
