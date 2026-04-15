@@ -614,6 +614,45 @@ curl -X POST {API_BASE_URL}/api/chat-upload \\
 
 ---
 
+**응답 샘플**
+
+`POST /api/chat` 응답:
+```json
+{{"answer": "수시 추천형은 학교장 추천을 받은 학생이 지원할 수 있습니다.", "model": "exaone3.5:32b", "usage": {{"input_tokens": 1250, "output_tokens": 85, "total_tokens": 1335}}}}
+```
+
+`POST /api/chat-upload` 응답 (이미지+RAG 채점):
+```json
+{{"answer": "채점 결과:\\n1. 논리 전개 (30점 만점): 25점\\n2. 근거 제시 (20점 만점): 15점\\n총점: 40/50점", "model": "gemma4:26b", "usage": {{"input_tokens": 3200, "output_tokens": 150, "total_tokens": 3350}}}}
+```
+
+`POST /api/rag/upload` 응답:
+```json
+{{"collection": "논술채점", "uploaded": [{{"collection": "논술채점", "filename": "채점가이드.pdf", "chunks": 12}}, {{"collection": "논술채점", "filename": "기준표.jpg", "chunks": 1}}]}}
+```
+
+`GET /api/rag/collections` 응답:
+```json
+[{{"name": "모집요강", "description": "수험생 상담용", "file_count": 1}}, {{"name": "논술채점", "description": "논술 채점 가이드", "file_count": 3}}]
+```
+
+`POST /api/transcribe` 응답 (format=json):
+```json
+{{"text": "오늘 강의에서는 미분방정식을...", "segments": [{{"start": 0.0, "end": 3.5, "text": "오늘 강의에서는"}}, {{"start": 3.5, "end": 7.2, "text": "미분방정식을..."}}], "language": "ko"}}
+```
+
+`GET /api/models` 응답:
+```json
+{{"default": "exaone3.5:32b", "models": {{"exaone3.5:32b": {{"id": "exaone3.5:32b", "name": "EXAONE 3.5 32B", "description": "LG AI 한국어 특화 대형 모델", "multimodal": false}}, "gemma4:26b": {{"id": "gemma4:26b", "name": "Gemma 4 26B MoE", "description": "Google MoE 모델", "multimodal": true}}}}}}
+```
+
+`GET /api/health` 응답:
+```json
+{{"status": "ok", "default_model": "exaone3.5:32b", "available_models": ["exaone3.5:32b", "huihui_ai/kanana-nano-abliterated", "gemma4:31b", "gemma4:26b"]}}
+```
+
+---
+
 **기타 엔드포인트**
 - `GET {API_BASE_URL}/api/health` — 서버 상태
 - `GET {API_BASE_URL}/api/models` — 모델 목록
