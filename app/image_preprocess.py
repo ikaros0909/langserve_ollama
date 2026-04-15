@@ -19,20 +19,23 @@ def preprocess_handwriting(image_bytes: bytes) -> bytes:
     if img is None:
         return image_bytes
 
-    # 1) 그레이스케일
+    # 1) 배경 컬러(파란색 등) 제거 — 손글씨(검정/짙은색)만 남기기
+    img = _remove_colored_background(img)
+
+    # 2) 그레이스케일
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    # 2) 대비 강화 (CLAHE)
+    # 3) 대비 강화 (CLAHE)
     clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
     enhanced = clahe.apply(gray)
 
-    # 3) 노이즈 제거
+    # 4) 노이즈 제거
     denoised = cv2.fastNlMeansDenoising(enhanced, h=10, templateWindowSize=7, searchWindowSize=21)
 
-    # 4) 기울기 보정
+    # 5) 기울기 보정
     deskewed = _deskew(denoised)
 
-    # 5) 적응형 이진화 (글씨를 더 선명하게)
+    # 6) 적응형 이진화 (글씨를 더 선명하게)
     binary = cv2.adaptiveThreshold(
         deskewed, 255,
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
@@ -41,7 +44,7 @@ def preprocess_handwriting(image_bytes: bytes) -> bytes:
         C=8,
     )
 
-    # 6) 해상도 업스케일 (작은 이미지인 경우)
+    # 7) 해상도 업스케일 (작은 이미지인 경우)
     h, w = binary.shape[:2]
     if max(h, w) < 1500:
         scale = 1500 / max(h, w)
@@ -50,6 +53,23 @@ def preprocess_handwriting(image_bytes: bytes) -> bytes:
     # numpy array → bytes (PNG)
     _, buf = cv2.imencode(".png", binary)
     return buf.tobytes()
+
+
+def _remove_colored_background(img: np.ndarray) -> np.ndarray:
+    """
+    파란색/빨간색 등 컬러 배경을 흰색으로 제거.
+    검정~짙은 회색(손글씨)만 남기고 나머지는 흰 배경으로.
+    """
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+
+    # 채도가 높은 영역 = 컬러 배경 (파란색 문항번호 등)
+    # S > 50이면 컬러로 간주 → 흰색으로 대체
+    color_mask = hsv[:, :, 1] > 50
+
+    result = img.copy()
+    result[color_mask] = [255, 255, 255]
+
+    return result
 
 
 def _deskew(img: np.ndarray) -> np.ndarray:
