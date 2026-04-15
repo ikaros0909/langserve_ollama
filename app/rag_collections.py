@@ -336,3 +336,19 @@ def get_retriever(name: str, k: int = 8):
     embeddings = _get_embeddings()
     vectorstore = FAISS.load_local(faiss_path, embeddings, allow_dangerous_deserialization=True)
     return vectorstore.as_retriever(search_type="mmr", search_kwargs={"k": k, "fetch_k": 30})
+
+
+def get_all_documents(name: str) -> List[Document]:
+    """컬렉션의 모든 문서를 반환 (전체 참조 모드)."""
+    col_dir = os.path.join(BASE_DIR, name)
+    faiss_path = os.path.join(col_dir, "faiss_index")
+
+    if not os.path.exists(faiss_path):
+        return []
+
+    embeddings = _get_embeddings()
+    vectorstore = FAISS.load_local(faiss_path, embeddings, allow_dangerous_deserialization=True)
+    # FAISS docstore에서 전체 문서 추출
+    all_docs = list(vectorstore.docstore._dict.values())
+    print(f"[RAG] 컬렉션 '{name}' 전체 문서 로드: {len(all_docs)}개", flush=True)
+    return all_docs

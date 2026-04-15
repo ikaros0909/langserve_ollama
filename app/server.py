@@ -239,6 +239,7 @@ class ChatRequest(BaseModel):
     temperature: Optional[float] = None
     images: Optional[List[str]] = None  # base64 인코딩 이미지 리스트
     rag_collection: Optional[str] = None  # RAG 컬렉션 이름
+    rag_mode: Optional[str] = None  # "search"(유사도 검색, 기본) 또는 "full"(전체 문서)
 
 
 class UsageInfo(BaseModel):
@@ -283,10 +284,16 @@ async def api_chat(req: ChatRequest):
     # RAG 컬렉션 참조
     rag_context = ""
     if req.rag_collection:
-        retriever = rag_collections.get_retriever(req.rag_collection)
-        if not retriever:
-            raise HTTPException(400, f"RAG 컬렉션 '{req.rag_collection}'을 찾을 수 없거나 비어있습니다.")
-        docs = retriever.invoke(req.message)
+        mode = (req.rag_mode or "full").lower()
+        if mode == "full":
+            docs = rag_collections.get_all_documents(req.rag_collection)
+        else:
+            retriever = rag_collections.get_retriever(req.rag_collection)
+            if not retriever:
+                raise HTTPException(400, f"RAG 컬렉션 '{req.rag_collection}'을 찾을 수 없거나 비어있습니다.")
+            docs = retriever.invoke(req.message)
+        if not docs:
+            raise HTTPException(400, f"RAG 컬렉션 '{req.rag_collection}'에 문서가 없습니다.")
         rag_context = "\n\n".join(doc.page_content for doc in docs)
 
     if req.images:
@@ -357,8 +364,9 @@ async def api_chat_upload(
     system_prompt: str = Form(default=""),
     temperature: float = Form(default=0.5),
     rag_collection: str = Form(default=""),
+    rag_mode: str = Form(default="full"),
 ):
-    """이미지를 파일로 직접 업로드하여 채팅. RAG 컬렉션 참조 가능."""
+    """이미지를 파일로 직접 업로드하여 채팅. RAG 컬렉션 참조 가능. rag_mode: full(전체)/search(검색)"""
     import base64 as b64
     from langchain_core.messages import HumanMessage as HMsg, SystemMessage as SMsg
 
@@ -379,10 +387,16 @@ async def api_chat_upload(
     # RAG 컬렉션 참조
     rag_context = ""
     if rag_collection:
-        retriever = rag_collections.get_retriever(rag_collection)
-        if not retriever:
-            raise HTTPException(400, f"RAG 컬렉션 '{rag_collection}'을 찾을 수 없거나 비어있습니다.")
-        docs = retriever.invoke(message)
+        mode = (rag_mode or "full").lower()
+        if mode == "full":
+            docs = rag_collections.get_all_documents(rag_collection)
+        else:
+            retriever = rag_collections.get_retriever(rag_collection)
+            if not retriever:
+                raise HTTPException(400, f"RAG 컬렉션 '{rag_collection}'을 찾을 수 없거나 비어있습니다.")
+            docs = retriever.invoke(message)
+        if not docs:
+            raise HTTPException(400, f"RAG 컬렉션 '{rag_collection}'에 문서가 없습니다.")
         rag_context = "\n\n".join(doc.page_content for doc in docs)
 
     if images:
