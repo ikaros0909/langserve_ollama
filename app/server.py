@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
-from fastapi import FastAPI, Request, HTTPException, Depends
+from fastapi import FastAPI, Request, HTTPException, Depends, UploadFile, File, Form
 from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
@@ -396,7 +396,6 @@ async def list_models():
 # --- 동영상 처리 API ---
 import tempfile
 import shutil
-from fastapi import UploadFile, File, Form
 
 
 @app.post("/api/video")
