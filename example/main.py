@@ -401,10 +401,10 @@ curl -X POST {API_BASE_URL}/api/chat \\
 ```
 
 **curl 예시 - 이미지 분석 (gemma4 전용, 파일 직접 업로드)**
-`POST {API_BASE_URL}/api/chat/upload` (multipart/form-data)
+`POST {API_BASE_URL}/api/chat-upload` (multipart/form-data)
 ```bash
 # 이미지 1장 분석
-curl -X POST {API_BASE_URL}/api/chat/upload \\
+curl -X POST {API_BASE_URL}/api/chat-upload \\
   -H "X-API-Key: jk-..." -H "X-Secret-Key: sk-..." \\
   -F "message=이 이미지를 설명해줘" \\
   -F "model=gemma4:26b" \\
@@ -413,7 +413,7 @@ curl -X POST {API_BASE_URL}/api/chat/upload \\
 
 ```bash
 # 여러 이미지 동시 분석
-curl -X POST {API_BASE_URL}/api/chat/upload \\
+curl -X POST {API_BASE_URL}/api/chat-upload \\
   -H "X-API-Key: jk-..." -H "X-Secret-Key: sk-..." \\
   -F "message=두 이미지를 비교해줘" \\
   -F "model=gemma4:26b" \\

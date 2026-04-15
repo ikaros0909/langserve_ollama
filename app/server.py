@@ -319,7 +319,7 @@ async def api_chat(req: ChatRequest):
 
 
 # --- 이미지 파일 업로드 채팅 API ---
-@app.post("/api/chat/upload", response_model=ChatResponse)
+@app.post("/api/chat-upload", response_model=ChatResponse)
 async def api_chat_upload(
     message: str = Form(...),
     images: List[UploadFile] = File(default=[]),
