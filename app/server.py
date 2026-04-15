@@ -284,8 +284,20 @@ async def api_chat(req: ChatRequest):
     # RAG 컬렉션 참조
     rag_context = ""
     if req.rag_collection:
-        mode = (req.rag_mode or "full").lower()
-        if mode == "full":
+        mode = (req.rag_mode or "auto").lower()
+        if mode == "auto":
+            # 자동: 문서 20개 이하면 전체, 초과면 검색
+            all_docs = rag_collections.get_all_documents(req.rag_collection)
+            if not all_docs:
+                raise HTTPException(400, f"RAG 컬렉션 '{req.rag_collection}'에 문서가 없습니다.")
+            if len(all_docs) <= 20:
+                docs = all_docs
+                print(f"[RAG] auto → full 모드 ({len(docs)}개 문서)", flush=True)
+            else:
+                retriever = rag_collections.get_retriever(req.rag_collection)
+                docs = retriever.invoke(req.message)
+                print(f"[RAG] auto → search 모드 ({len(docs)}개 검색결과 / 전체 {len(all_docs)}개)", flush=True)
+        elif mode == "full":
             docs = rag_collections.get_all_documents(req.rag_collection)
         else:
             retriever = rag_collections.get_retriever(req.rag_collection)
@@ -388,8 +400,19 @@ async def api_chat_upload(
     # RAG 컬렉션 참조
     rag_context = ""
     if rag_collection:
-        mode = (rag_mode or "full").lower()
-        if mode == "full":
+        mode = (rag_mode or "auto").lower()
+        if mode == "auto":
+            all_docs = rag_collections.get_all_documents(rag_collection)
+            if not all_docs:
+                raise HTTPException(400, f"RAG 컬렉션 '{rag_collection}'에 문서가 없습니다.")
+            if len(all_docs) <= 20:
+                docs = all_docs
+                print(f"[RAG] auto → full 모드 ({len(docs)}개 문서)", flush=True)
+            else:
+                retriever = rag_collections.get_retriever(rag_collection)
+                docs = retriever.invoke(message)
+                print(f"[RAG] auto → search 모드 ({len(docs)}개 검색결과 / 전체 {len(all_docs)}개)", flush=True)
+        elif mode == "full":
             docs = rag_collections.get_all_documents(rag_collection)
         else:
             retriever = rag_collections.get_retriever(rag_collection)
