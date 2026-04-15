@@ -64,17 +64,22 @@ def _extract_text_from_image(file_path: str) -> str:
     try:
         from langchain_ollama import ChatOllama
         from langchain_core.messages import HumanMessage, SystemMessage
+        from image_preprocess import preprocess_handwriting
 
         with open(file_path, "rb") as f:
-            img_b64 = base64.b64encode(f.read()).decode()
+            raw_bytes = f.read()
 
-        ext = os.path.splitext(file_path)[1].lstrip(".")
+        # 손글씨 전처리 (대비 강화, 노이즈 제거, 이진화, 기울기 보정)
+        print(f"[RAG] 이미지 전처리 중: {os.path.basename(file_path)}", flush=True)
+        processed_bytes = preprocess_handwriting(raw_bytes)
+        img_b64 = base64.b64encode(processed_bytes).decode()
+
         llm = ChatOllama(model="gemma4:26b", temperature=0)
         result = llm.invoke([
-            SystemMessage(content="이미지의 모든 텍스트와 내용을 정확하게 추출하여 한국어로 정리해주세요. 표가 있으면 표 형식을 유지하세요."),
+            SystemMessage(content="이미지의 모든 텍스트와 내용을 정확하게 추출하여 한국어로 정리해주세요. 손글씨도 최대한 정확히 읽어주세요. 표가 있으면 표 형식을 유지하세요."),
             HumanMessage(content=[
-                {"type": "image_url", "image_url": f"data:image/{ext};base64,{img_b64}"},
-                {"type": "text", "text": "이 이미지의 모든 내용을 텍스트로 추출해주세요."},
+                {"type": "image_url", "image_url": f"data:image/png;base64,{img_b64}"},
+                {"type": "text", "text": "이 이미지의 모든 내용을 텍스트로 추출해주세요. 손글씨 포함."},
             ]),
         ])
         text = result.content if hasattr(result, "content") else str(result)

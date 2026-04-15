@@ -290,12 +290,17 @@ async def api_chat(req: ChatRequest):
         rag_context = "\n\n".join(doc.page_content for doc in docs)
 
     if req.images:
-        # 멀티모달: 이미지 + 텍스트 + RAG 컨텍스트
+        # 멀티모달: 이미지 전처리 + 텍스트 + RAG 컨텍스트
+        import base64 as b64mod
+        from image_preprocess import preprocess_handwriting
         content_blocks = []
         for img_b64 in req.images:
+            raw_bytes = b64mod.b64decode(img_b64)
+            processed = preprocess_handwriting(raw_bytes)
+            processed_b64 = b64mod.b64encode(processed).decode()
             content_blocks.append({
                 "type": "image_url",
-                "image_url": f"data:image/jpeg;base64,{img_b64}",
+                "image_url": f"data:image/png;base64,{processed_b64}",
             })
         user_text = req.message
         if rag_context:
@@ -381,14 +386,16 @@ async def api_chat_upload(
         rag_context = "\n\n".join(doc.page_content for doc in docs)
 
     if images:
+        from image_preprocess import preprocess_handwriting
         content_blocks = []
         for img_file in images:
             img_bytes = await img_file.read()
+            # 손글씨 이미지 전처리
+            img_bytes = preprocess_handwriting(img_bytes)
             img_b64 = b64.b64encode(img_bytes).decode()
-            ext = img_file.filename.split(".")[-1].lower() if img_file.filename else "jpeg"
             content_blocks.append({
                 "type": "image_url",
-                "image_url": f"data:image/{ext};base64,{img_b64}",
+                "image_url": f"data:image/png;base64,{img_b64}",
             })
         user_text = message
         if rag_context:
