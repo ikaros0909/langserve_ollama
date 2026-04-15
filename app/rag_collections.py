@@ -233,6 +233,16 @@ def add_file_to_collection(name: str, file_path: str, filename: str) -> Dict:
     print(f"[RAG] 파일 임베딩 중: {filename} → 컬렉션 '{name}'", flush=True)
     docs = _build_docs(dest_path)
 
+    # 빈 문서 제거
+    docs = [d for d in docs if d.page_content and d.page_content.strip()]
+    if not docs:
+        print(f"[RAG] 경고: {filename}에서 텍스트를 추출하지 못했습니다. 건너뜀.", flush=True)
+        # 파일은 저장하되 임베딩은 건너뜀
+        if filename not in meta[name]["files"]:
+            meta[name]["files"].append(filename)
+        _save_metadata(meta)
+        return {"collection": name, "filename": filename, "chunks": 0, "warning": "텍스트 추출 실패"}
+
     # 파일명을 메타데이터에 추가
     for doc in docs:
         doc.metadata["source_file"] = filename
