@@ -168,7 +168,7 @@ def _build_retriever(file_path, cache_dir):
     from hashlib import sha256
     cached_embeddings = CacheBackedEmbeddings.from_bytes_store(
         embeddings, cache_dir,
-        key_encoder=lambda x: sha256(x).hexdigest(),
+        key_encoder=lambda x: sha256(x.encode() if isinstance(x, str) else x).hexdigest(),
     )
 
     # FAISS 인덱스가 이미 저장되어 있으면 로드, 없으면 생성 후 저장
