@@ -440,24 +440,36 @@ async def api_transcribe(
             lambda: video_processor.transcribe_audio(audio_path, whisper_model, language=language or None),
         )
 
+        from starlette.responses import PlainTextResponse
+
         if format == "text":
-            return {"text": result["text"], "language": result["language"]}
+            return PlainTextResponse(result["text"], media_type="text/plain; charset=utf-8")
 
         if format == "srt":
             srt_lines = []
             for i, seg in enumerate(result["segments"], 1):
                 start = _format_timestamp_srt(seg["start"])
                 end = _format_timestamp_srt(seg["end"])
-                srt_lines.append(f"{i}\n{start} --> {end}\n{seg['text'].strip()}\n")
-            return {"srt": "\n".join(srt_lines), "language": result["language"]}
+                srt_lines.append(f"{i}\n{start} --> {end}\n{seg['text'].strip()}")
+            srt_content = "\n\n".join(srt_lines) + "\n"
+            return PlainTextResponse(
+                srt_content,
+                media_type="text/plain; charset=utf-8",
+                headers={"Content-Disposition": f"attachment; filename=subtitle.srt"},
+            )
 
         if format == "vtt":
-            vtt_lines = ["WEBVTT\n"]
+            vtt_lines = ["WEBVTT"]
             for seg in result["segments"]:
                 start = _format_timestamp_vtt(seg["start"])
                 end = _format_timestamp_vtt(seg["end"])
-                vtt_lines.append(f"{start} --> {end}\n{seg['text'].strip()}\n")
-            return {"vtt": "\n".join(vtt_lines), "language": result["language"]}
+                vtt_lines.append(f"\n{start} --> {end}\n{seg['text'].strip()}")
+            vtt_content = "\n".join(vtt_lines) + "\n"
+            return PlainTextResponse(
+                vtt_content,
+                media_type="text/vtt; charset=utf-8",
+                headers={"Content-Disposition": f"attachment; filename=subtitle.vtt"},
+            )
 
         # json (기본)
         return {
