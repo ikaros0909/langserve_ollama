@@ -1,0 +1,11 @@
+FROM /home/jinhakdl2/chatbot/langserve_ollama/gguf/SuperGemma4-31b-abliterated-Q4_K_M.gguf
+
+TEMPLATE """<start_of_turn>user
+{{ .Prompt }}<end_of_turn>
+<start_of_turn>model
+{{ .Response }}<end_of_turn>
+"""
+
+PARAMETER stop <end_of_turn>
+PARAMETER temperature 0.5
+PARAMETER num_ctx 8192

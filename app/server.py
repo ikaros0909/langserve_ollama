@@ -228,6 +228,16 @@ AVAILABLE_MODELS = {
         "description": "Google MoE 모델 (4B active, 256K context, 멀티모달)",
         "multimodal": True,
     },
+    "0xIbra/supergemma4-26b-uncensored-gguf-v2": {
+        "name": "SuperGemma4 26B Uncensored",
+        "description": "Gemma 4 26B 무검열 버전 (멀티모달)",
+        "multimodal": True,
+    },
+    "SuperGemma4-31b:latest": {
+        "name": "SuperGemma4 31B Abliterated [Q4]",
+        "description": "Gemma 4 31B 무검열 Dense (Q4_K_M 양자화, 멀티모달)",
+        "multimodal": True,
+    },
 }
 
 DEFAULT_MODEL = "exaone3.5:32b"
