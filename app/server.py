@@ -230,13 +230,13 @@ AVAILABLE_MODELS = {
     },
     "0xIbra/supergemma4-26b-uncensored-gguf-v2:Q4_K_M": {
         "name": "SuperGemma4 26B Uncensored",
-        "description": "Gemma 4 26B 무검열 버전 (멀티모달)",
-        "multimodal": True,
+        "description": "Gemma 4 26B 무검열 버전 (텍스트 전용)",
+        "multimodal": False,
     },
     "SuperGemma4-31b:latest": {
         "name": "SuperGemma4 31B Abliterated [Q4]",
-        "description": "Gemma 4 31B 무검열 Dense (Q4_K_M 양자화, 멀티모달)",
-        "multimodal": True,
+        "description": "Gemma 4 31B 무검열 Dense (Q4_K_M 양자화, 텍스트 전용)",
+        "multimodal": False,
     },
 }
 
