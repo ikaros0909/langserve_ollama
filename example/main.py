@@ -215,10 +215,10 @@ GUI_MODELS = {
     "huihui_ai/kanana-nano-abliterated": "Kanana Nano (Kakao)",
     "gemma4:31b": "Gemma 4 31B Dense (Google)",
     "gemma4:26b": "Gemma 4 26B MoE (Google)",
-    "0xIbra/supergemma4-26b-uncensored-gguf-v2": "SuperGemma4 26B Uncensored 멀티모달",
+    "0xIbra/supergemma4-26b-uncensored-gguf-v2:Q4_K_M": "SuperGemma4 26B Uncensored 멀티모달",
     "SuperGemma4-31b:latest": "SuperGemma4 31B Abliterated [Q4] 멀티모달",
 }
-MULTIMODAL_MODELS = {"gemma4:26b", "gemma4:31b", "EXAONE-4.5-33B:latest", "0xIbra/supergemma4-26b-uncensored-gguf-v2", "SuperGemma4-31b:latest"}
+MULTIMODAL_MODELS = {"gemma4:26b", "gemma4:31b", "EXAONE-4.5-33B:latest", "0xIbra/supergemma4-26b-uncensored-gguf-v2:Q4_K_M", "SuperGemma4-31b:latest"}
 
 with st.sidebar:
     st.markdown("**모델 선택**")

@@ -228,7 +228,7 @@ AVAILABLE_MODELS = {
         "description": "Google MoE 모델 (4B active, 256K context, 멀티모달)",
         "multimodal": True,
     },
-    "0xIbra/supergemma4-26b-uncensored-gguf-v2": {
+    "0xIbra/supergemma4-26b-uncensored-gguf-v2:Q4_K_M": {
         "name": "SuperGemma4 26B Uncensored",
         "description": "Gemma 4 26B 무검열 버전 (멀티모달)",
         "multimodal": True,
