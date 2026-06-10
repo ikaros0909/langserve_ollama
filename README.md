@@ -4,7 +4,26 @@
 
 ---
 
-## 목차
+## 자동 설치 (권장)
+
+```bash
+git clone git@github.com:ikaros0909/langserve_ollama.git
+cd langserve_ollama
+chmod +x setup.sh && ./setup.sh
+```
+
+설치 완료 후 실행:
+```bash
+./start.sh
+# 브라우저에서 http://localhost:8501 접속
+```
+
+> 자동 설치 스크립트가 Python 환경, Ollama, 모든 모델을 한 번에 설치합니다.
+> 수동 설치가 필요하면 아래 매뉴얼을 참고하세요.
+
+---
+
+## 수동 설치 매뉴얼 (목차)
 
 1. [사전 준비](#1-사전-준비)
 2. [프로젝트 클론](#2-프로젝트-클론)
